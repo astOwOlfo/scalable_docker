@@ -61,7 +61,8 @@ class HeadServer(JsonRESTServer):
     running_container_capacity_per_worker: int = 32
     existing_container_capacity_per_worker: int = 64
     probability_worker_load_check: float = 1e-1
-    workers: list[Worker] = field(init=False)
+    _workers: list[Worker] = field(init=False)
+    _container_name_to_worker: dict[str, Worker] = field(default_factory=lambda: {})
 
     def __post_init__(self) -> None:
         super().__init__(port=self.port, host=self.host)
@@ -127,6 +128,9 @@ class HeadServer(JsonRESTServer):
         max_cpus: int | None,
         max_lifespan_seconds: int | None,
     ) -> Any:
+        if container_name in self._container_name_to_worker.keys():
+            return {"error": f"The container name '{container_name}' is already used."}
+
         total_retries = (
             self.max_retries_creating_sandbox_with_waiting
             + self.max_retries_creating_sandbox_without_waiting
@@ -152,6 +156,7 @@ class HeadServer(JsonRESTServer):
 
             if not self.server_response_is_failure(response):
                 worker.estimated_resource_usage.n_running_containers += 1
+                self._container_name_to_worker[container_name] = worker
                 return response
 
             worker.health = 0.0
@@ -179,10 +184,11 @@ class HeadServer(JsonRESTServer):
         total_timeout_seconds: float | int,
         per_command_timeout_seconds: float | int,
     ) -> Any:
-        print("HeadServer.run_commands called")
-
-        worker = self.choose_worker()
-
+        worker = self._container_name_to_worker.get(container_name)
+        
+        if worker is None:
+            return {"error": f"The sandbox with container name '{container_name}' has never been created."}
+        
         response = worker.client.run_commands(
             container_name=container_name,
             commands=commands,
@@ -198,7 +204,10 @@ class HeadServer(JsonRESTServer):
         return response
 
     def cleanup_sandbox(self, container_name: str) -> Any:
-        worker = self.choose_worker()
+        worker = self._container_name_to_worker.get(container_name)
+        
+        if worker is None:
+            return {"error": f"The sandbox with container name '{container_name}' has never been created."}
 
         response = worker.client.cleanup_sandbox(container_name=container_name)
 
