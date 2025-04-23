@@ -37,7 +37,6 @@ class JsonRESTServer(ABC):
                 return jsonify({"error": "Request must be JSON"}), 400
 
             data = request.get_json()
-            print(f"JsonRESTServer.process: calling self._get_response_or_error {data=}")
             result, status_code = self._get_response_or_error(data)
 
             return jsonify(result), status_code
