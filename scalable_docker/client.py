@@ -25,7 +25,7 @@ class RemoteDockerSandbox(JsonRESTClient):
         dockerfile_content: str,
         max_memory_gb: float | int | None = 1.0,
         max_cpus: int | None = 1,
-        max_lifespan_seconds: int | None = 600,
+        max_lifespan_seconds: int | None = 10_000,
         server_url: str | None = None,
     ) -> None:
         if server_url is None:

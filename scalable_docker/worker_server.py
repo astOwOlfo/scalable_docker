@@ -49,7 +49,6 @@ class WorkerServer(JsonRESTServer):
     ) -> None:
         super().__init__(host=host, port=port)
         self.used_container_names: set[str] = set()
-        self.mutation_lock = Lock()
         self.images: dict[Dockerfile, Image] = {}
         self.build_image_threads: dict[Image, Thread] = {}
         self.build_image_failures: dict[Image, Failure] = {}
@@ -74,37 +73,36 @@ class WorkerServer(JsonRESTServer):
         max_cpus: float | int | None,
         max_lifespan_seconds: float | int | None,
     ) -> Any:
-        with self.mutation_lock:
-            if container_name in self.used_container_names:
-                return {"error": f"Sandbox id '{container_name}' is already used."}
-            self.used_container_names.add(container_name)
+        if container_name in self.used_container_names:
+            return {"error": f"Sandbox id '{container_name}' is already used."}
+        self.used_container_names.add(container_name)
 
-            dockerfile = Dockerfile(content=dockerfile_content)
-            image: Image | None = self.images.get(dockerfile)
-            already_built = image is not None
-            if not already_built:
-                image = Image(
-                    name=f"scalable-docker-image-{uuid4()}", dockerfile=dockerfile
-                )
-                self.images[dockerfile] = image
-                build_thread = Thread(target=self.build_image, args=(image,))
-                build_thread.start()
-                self.build_image_threads[image] = build_thread
-
-            container = Container(name=container_name, image=image)
-            start_thread = Thread(
-                target=self.start_container,
-                args=(container,),
-                kwargs={
-                    "max_memory_gb": max_memory_gb,
-                    "max_cpus": max_cpus,
-                    "max_lifespan_seconds": max_lifespan_seconds,
-                },
+        dockerfile = Dockerfile(content=dockerfile_content)
+        image: Image | None = self.images.get(dockerfile)
+        already_built = image is not None
+        if not already_built:
+            image = Image(
+                name=f"scalable-docker-image-{uuid4()}", dockerfile=dockerfile
             )
-            self.start_container_threads[container] = start_thread
-            start_thread.start()
+            self.images[dockerfile] = image
+            build_thread = Thread(target=self.build_image, args=(image,))
+            build_thread.start()
+            self.build_image_threads[image] = build_thread
 
-            self.running_containers_by_name[container.name] = container
+        container = Container(name=container_name, image=image)
+        start_thread = Thread(
+            target=self.start_container,
+            args=(container,),
+            kwargs={
+                "max_memory_gb": max_memory_gb,
+                "max_cpus": max_cpus,
+                "max_lifespan_seconds": max_lifespan_seconds,
+            },
+        )
+        self.start_container_threads[container] = start_thread
+        start_thread.start()
+
+        self.running_containers_by_name[container.name] = container
 
     def build_image(self, image: Image) -> None:
         docker_directory = path.join(self.working_directory, image.name)
@@ -117,10 +115,9 @@ class WorkerServer(JsonRESTServer):
 
         built_successfully = output.returncode == 0
         if not built_successfully:
-            with self.mutation_lock:
-                self.build_image_failures[image] = Failure(
-                    f"Failed building image.\nDocker build exit code: {output.returncode}\n\nDocker build stdout: {output.stdout}\n\nDocker build stderr: {output.stderr}"
-                )
+            self.build_image_failures[image] = Failure(
+                f"Failed building image.\nDocker build exit code: {output.returncode}\n\nDocker build stdout: {output.stdout}\n\nDocker build stderr: {output.stderr}"
+            )
 
     def start_container(
         self,
@@ -129,13 +126,12 @@ class WorkerServer(JsonRESTServer):
         max_cpus: int | None,
         max_lifespan_seconds: int | None,
     ) -> None:
-        with self.mutation_lock:
-            build_thread = self.build_image_threads.get(container.image)
-            if build_thread is not None:
-                build_thread.join()
+        build_thread = self.build_image_threads.get(container.image)
+        if build_thread is not None:
+            build_thread.join()
 
-            if container.image in self.build_image_failures:
-                return
+        if container.image in self.build_image_failures:
+            return
 
         command = ["docker", "run", "-d", "--rm", "--name", container.name]
         if max_memory_gb is not None:
@@ -154,10 +150,9 @@ class WorkerServer(JsonRESTServer):
 
         started_successfully = output.returncode == 0
         if not started_successfully:
-            with self.mutation_lock:
-                self.start_container_failures[container] = Failure(
-                    f"Failed starting container '{container.name}'.\nDocker run exit code: {output.returncode}\n\nDocker run stdout: {output.stdout}\n\nDocker run stderr: {output.stderr}"
-                )
+            self.start_container_failures[container] = Failure(
+                f"Failed starting container '{container.name}'.\nDocker run exit code: {output.returncode}\n\nDocker run stdout: {output.stdout}\n\nDocker run stderr: {output.stderr}"
+            )
 
     def wait_for_container_to_start(self, container: Container) -> None:
         if container in self.start_container_threads:
