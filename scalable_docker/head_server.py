@@ -184,6 +184,8 @@ class HeadServer(JsonRESTServer):
         total_timeout_seconds: float | int,
         per_command_timeout_seconds: float | int,
     ) -> Any:
+        print("HeadServer.run_commands called")
+
         worker = self._container_name_to_worker.get(container_name)
         
         if worker is None:
