@@ -189,14 +189,14 @@ class HeadServer(JsonRESTServer):
         if worker is None:
             return {"error": f"The sandbox with container name '{container_name}' has never been created."}
         
+        print(f"HeadServer.run_commands: calling worker with url {worker.client.server_url}")
         response = worker.client.run_commands(
             container_name=container_name,
             commands=commands,
             total_timeout_seconds=total_timeout_seconds,
             per_command_timeout_seconds=per_command_timeout_seconds,
         )
-
-        print(f"{response=}")
+        print("HeadServer.run_commands: finished calling worker")
 
         if self.server_response_is_failure(response):
             worker.health = 0.0
