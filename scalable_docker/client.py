@@ -1,4 +1,6 @@
 from uuid import uuid4
+import base64
+from shlex import quote
 import os
 from typing import Any
 from beartype import beartype
@@ -88,6 +90,18 @@ class RemoteDockerSandbox(JsonRESTClient):
                 f"Failed sandbox cleanup. The server response is: {response}"
             )
 
+    def upload_file(self, filename: str, content: str) -> ProcessOutput:
+        command = RemoteDockerSandbox.upload_file_command(
+            filename=filename, content=content
+        )
+        return self.run_commands([command])[0]
+
+    @staticmethod
+    def upload_file_command(filename: str, content: str) -> str:
+        encoded_data = base64.b64encode(content.encode()).decode()
+        return f"echo {encoded_data} | base64 -d > {quote(filename)}"
+
+
 @beartype
 def add_worker(worker_server_url: str, head_server_url: str | None) -> None:
     if head_server_url is None:
@@ -97,8 +111,10 @@ def add_worker(worker_server_url: str, head_server_url: str | None) -> None:
         raise ValueError(
             "A sever url must be provided to RemoteDockerSandbox, either by passing a `server_url` argument to its constructor or by setting the `DOCKER_SANDBOX_SERVER_URL` system variable."
         )
-    
-    response = JsonRESTClient(head_server_url).call_server(function="add_worker", worker_server_url=worker_server_url)
+
+    response = JsonRESTClient(head_server_url).call_server(
+        function="add_worker", worker_server_url=worker_server_url
+    )
 
     if response is not None:
         message = f"FAILURE ADDING NEW WORKER. Server response: {response}"
