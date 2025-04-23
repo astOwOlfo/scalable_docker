@@ -1,0 +1,11 @@
+[project]
+name = "scalable-docker"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "beartype>=0.20.2",
+    "flask>=3.1.0",
+    "requests>=2.32.3",
+]
