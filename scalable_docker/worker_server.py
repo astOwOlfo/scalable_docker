@@ -251,7 +251,7 @@ class WorkerServer(JsonRESTServer):
                     shell=True,
                     errors="replace",
                     text=True,
-                ).stdout
+                ).stdout.strip()
             ),
             "n_existing_containers": int(
                 run(
@@ -261,7 +261,7 @@ class WorkerServer(JsonRESTServer):
                     shell=True,
                     errors="replace",
                     text=True,
-                ).stdout
+                ).stdout.strip()
             ),
             "fraction_memory_used": float(
                 run(
@@ -271,7 +271,7 @@ class WorkerServer(JsonRESTServer):
                     shell=True,
                     errors="replace",
                     text=True,
-                ).stdout.removesuffix("%")
+                ).stdout.strip().removesuffix("%")
             )
             / 100,
             "fraction_disk_used": float(
@@ -282,7 +282,7 @@ class WorkerServer(JsonRESTServer):
                     shell=True,
                     errors="replace",
                     text=True,
-                ).stdout.removesuffix("%")
+                ).stdout.strip().removesuffix("%")
             )
             / 100,
         }
