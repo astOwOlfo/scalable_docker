@@ -76,8 +76,6 @@ class RemoteDockerSandbox(JsonRESTClient):
                 f"Failed running commands in the sandbox. The server response is: {response}"
             )
 
-        print(f"{response=}")
-
         return [ProcessOutput(**output) for output in response]
 
     def cleanup(self) -> None:
