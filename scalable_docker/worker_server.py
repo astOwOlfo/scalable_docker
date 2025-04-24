@@ -63,6 +63,7 @@ class WorkerServer(JsonRESTServer):
             "create_sandbox": self.create_sandbox,
             "run_commands": self.run_commands,
             "cleanup_sandbox": self.cleanup_sandbox,
+            "get_resource_usage": self.get_resource_usage
         }
 
     def create_sandbox(
