@@ -3,7 +3,7 @@ from uuid import uuid4
 from os import makedirs, path
 from time import perf_counter
 from subprocess import run, PIPE, TimeoutExpired
-from threading import Thread, Lock
+from threading import Thread
 from dataclasses import dataclass, asdict
 from collections.abc import Callable
 from typing import Any
@@ -37,6 +37,13 @@ class Image:
 class Container:
     name: str
     image: Image
+    startup_commands: list[str]
+    max_memory_gb: float | int | None
+    max_cpus: float | int | None
+    max_lifespan_seconds: float | int | None
+
+    def __hash__(self) -> int:
+        return hash(self.name)
 
 
 @beartype
@@ -63,13 +70,14 @@ class WorkerServer(JsonRESTServer):
             "create_sandbox": self.create_sandbox,
             "run_commands": self.run_commands,
             "cleanup_sandbox": self.cleanup_sandbox,
-            "get_resource_usage": self.get_resource_usage
+            "get_resource_usage": self.get_resource_usage,
         }
 
     def create_sandbox(
         self,
         container_name: str,
         dockerfile_content: str,
+        startup_commands: list[str],
         max_memory_gb: float | int | None,
         max_cpus: float | int | None,
         max_lifespan_seconds: float | int | None,
@@ -90,16 +98,15 @@ class WorkerServer(JsonRESTServer):
             build_thread.start()
             self.build_image_threads[image] = build_thread
 
-        container = Container(name=container_name, image=image)
-        start_thread = Thread(
-            target=self.start_container,
-            args=(container,),
-            kwargs={
-                "max_memory_gb": max_memory_gb,
-                "max_cpus": max_cpus,
-                "max_lifespan_seconds": max_lifespan_seconds,
-            },
+        container = Container(
+            name=container_name,
+            image=image,
+            startup_commands=startup_commands,
+            max_memory_gb=max_memory_gb,
+            max_cpus=max_cpus,
+            max_lifespan_seconds=max_lifespan_seconds,
         )
+        start_thread = Thread(target=self.start_container, args=(container,))
         self.start_container_threads[container] = start_thread
         start_thread.start()
 
@@ -120,13 +127,7 @@ class WorkerServer(JsonRESTServer):
                 f"Failed building image.\nDocker build exit code: {output.returncode}\n\nDocker build stdout: {output.stdout}\n\nDocker build stderr: {output.stderr}"
             )
 
-    def start_container(
-        self,
-        container: Container,
-        max_memory_gb: float | int | None,
-        max_cpus: int | None,
-        max_lifespan_seconds: int | None,
-    ) -> None:
+    def start_container(self, container: Container) -> None:
         build_thread = self.build_image_threads.get(container.image)
         if build_thread is not None:
             build_thread.join()
@@ -135,16 +136,16 @@ class WorkerServer(JsonRESTServer):
             return
 
         command = ["docker", "run", "-d", "--rm", "--name", container.name]
-        if max_memory_gb is not None:
-            command += ["--memory", f"{max_memory_gb}gb"]
-        if max_cpus is not None:
-            command += ["--cpus", str(max_cpus)]
+        if container.max_memory_gb is not None:
+            command += ["--memory", f"{container.max_memory_gb}gb"]
+        if container.max_cpus is not None:
+            command += ["--cpus", str(container.max_cpus)]
         command += [
             "--tty",
             container.image.name,
             "/bin/bash",
             "-c",
-            f"sleep {max_lifespan_seconds if max_lifespan_seconds is not None else 'infinity'}",
+            f"sleep {container.max_lifespan_seconds if container.max_lifespan_seconds is not None else 'infinity'}",
         ]
 
         output = run(command, stdout=PIPE, stderr=PIPE, text=True, errors="replace")
@@ -154,6 +155,14 @@ class WorkerServer(JsonRESTServer):
             self.start_container_failures[container] = Failure(
                 f"Failed starting container '{container.name}'.\nDocker run exit code: {output.returncode}\n\nDocker run stdout: {output.stdout}\n\nDocker run stderr: {output.stderr}"
             )
+
+        for command in container.startup_commands:
+            output = run(["docker", "exec", container.name, "/bin/bash", "-c", command])
+            success = output.returncode == 0
+            if not success:
+                self.start_container_failures[container] = Failure(
+                    f"Failed starting container '{container.name}'.\nA startup command exited with nonzero exit code.\n\nFailed command: {command}\n\nExit code:{output.returncode}\n\nStdout{output.stdout}\n\nStderr:{output.stderr}"
+                )
 
     def wait_for_container_to_start(self, container: Container) -> None:
         if container in self.start_container_threads:
@@ -271,7 +280,9 @@ class WorkerServer(JsonRESTServer):
                     shell=True,
                     errors="replace",
                     text=True,
-                ).stdout.strip().removesuffix("%")
+                )
+                .stdout.strip()
+                .removesuffix("%")
             )
             / 100,
             "fraction_disk_used": float(
@@ -282,7 +293,9 @@ class WorkerServer(JsonRESTServer):
                     shell=True,
                     errors="replace",
                     text=True,
-                ).stdout.strip().removesuffix("%")
+                )
+                .stdout.strip()
+                .removesuffix("%")
             )
             / 100,
         }

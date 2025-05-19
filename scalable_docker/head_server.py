@@ -124,6 +124,7 @@ class HeadServer(JsonRESTServer):
         self,
         container_name: str,
         dockerfile_content: str,
+        startup_commands: list[str],
         max_memory_gb: float | int | None,
         max_cpus: int | None,
         max_lifespan_seconds: int | None,
@@ -147,6 +148,7 @@ class HeadServer(JsonRESTServer):
             response = worker.client.create_sandbox(
                 container_name=container_name,
                 dockerfile_content=dockerfile_content,
+                startup_commands=startup_commands,
                 max_memory_gb=max_memory_gb,
                 max_cpus=max_cpus,
                 max_lifespan_seconds=max_lifespan_seconds,
@@ -182,12 +184,13 @@ class HeadServer(JsonRESTServer):
         total_timeout_seconds: float | int,
         per_command_timeout_seconds: float | int,
     ) -> Any:
-
         worker = self._container_name_to_worker.get(container_name)
-        
+
         if worker is None:
-            return {"error": f"The sandbox with container name '{container_name}' has never been created."}
-        
+            return {
+                "error": f"The sandbox with container name '{container_name}' has never been created."
+            }
+
         response = worker.client.run_commands(
             container_name=container_name,
             commands=commands,
@@ -202,9 +205,11 @@ class HeadServer(JsonRESTServer):
 
     def cleanup_sandbox(self, container_name: str) -> Any:
         worker = self._container_name_to_worker.get(container_name)
-        
+
         if worker is None:
-            return {"error": f"The sandbox with container name '{container_name}' has never been created."}
+            return {
+                "error": f"The sandbox with container name '{container_name}' has never been created."
+            }
 
         response = worker.client.cleanup_sandbox(container_name=container_name)
 
@@ -214,14 +219,14 @@ class HeadServer(JsonRESTServer):
             worker.estimated_resource_usage.n_running_containers -= 1
 
         return response
-    
+
     def add_worker(self, worker_server_url: str) -> Any:
         worker = Worker(client=WorkerClient(server_url=worker_server_url))
         response = worker.client.get_resource_usage()
-        
+
         if self.server_response_is_failure(response):
             return response
-    
+
         self.worker_urls.append(worker_server_url)
         self.workers.append(worker)
 

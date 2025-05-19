@@ -23,6 +23,7 @@ class RemoteDockerSandbox(JsonRESTClient):
     def __init__(
         self,
         dockerfile_content: str,
+        startup_commands: list[str] | None = None,
         max_memory_gb: float | int | None = 1.0,
         max_cpus: int | None = 1,
         max_lifespan_seconds: int | None = 10_000,
@@ -44,6 +45,7 @@ class RemoteDockerSandbox(JsonRESTClient):
             function="create_sandbox",
             container_name=self.container_name,
             dockerfile_content=dockerfile_content,
+            startup_commands=startup_commands if startup_commands is not None else [],
             max_memory_gb=max_memory_gb,
             max_cpus=max_cpus,
             max_lifespan_seconds=max_lifespan_seconds,
