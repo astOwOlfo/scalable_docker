@@ -6,7 +6,7 @@ from typing import Any
 from beartype import beartype
 from dataclasses import dataclass
 
-from scalable_docker.rest_client_base import JsonRESTClient
+from scalable_docker.rest_client_base import JsonRESTClient, AsyncJsonRESTClient
 
 
 @beartype
@@ -102,7 +102,7 @@ class RemoteDockerSandbox(JsonRESTClient):
 
 
 @beartype
-class AsyncRemoteDockerSandbox(JsonRESTClient):
+class AsyncRemoteDockerSandbox(AsyncJsonRESTClient):
     container_name: str
 
     @classmethod
