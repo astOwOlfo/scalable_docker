@@ -229,9 +229,6 @@ class WorkerServer(JsonRESTServer):
                 )
                 continue
 
-            with open("/home/user/temp/times-spent.log", "a") as f:
-                f.write(f"{container_name=} {time_spent_so_far=} {command[:256]=}\n")
-
             output = self.run_single_command(
                 container=container,
                 command=command,
