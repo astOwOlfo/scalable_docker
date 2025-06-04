@@ -106,7 +106,7 @@ class AsyncRemoteDockerSandbox(JsonRESTClient):
     container_name: str
 
     @classmethod
-    async def make_sandbox(
+    async def create_sandbox(
         cls,
         dockerfile_content: str,
         startup_commands: list[str] | None = None,
