@@ -114,7 +114,7 @@ class AsyncRemoteDockerSandbox(AsyncJsonRESTClient):
         max_cpus: int | None = 1,
         max_lifespan_seconds: int | None = 10_000,
         server_url: str | None = None,
-    ) -> None:
+    ) -> "AsyncRemoteDockerSandbox":
         if server_url is None:
             server_url = os.environ.get("DOCKER_SANDBOX_SERVER_URL")
 
@@ -141,6 +141,8 @@ class AsyncRemoteDockerSandbox(AsyncJsonRESTClient):
             raise ValueError(
                 f"Failed creating sandbox. The server response is: {creation_response}"
             )
+        
+        return sandbox
 
     def server_response_is_error(self, response: Any) -> bool:
         return isinstance(response, dict) and "error" in response.keys()
