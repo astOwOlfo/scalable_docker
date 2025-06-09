@@ -31,6 +31,9 @@ class Worker:
         self.last_error_time = None
 
 
+# TO DO: LOCKS!!
+
+
 @beartype
 class HeadServer(JsonRESTServer):
     workers: list[Worker]
@@ -105,9 +108,7 @@ class HeadServer(JsonRESTServer):
         self, dockerfile_contents: list[str]
     ) -> list[Container] | dict:
         if self.running_containers is not None:
-            return {
-                "error": "You must call start_destroying containers before every call to start_containers except for the first one."
-            }
+            self.start_destroying_containers()
 
         healthy_worker_indices = self.healthy_worker_indices()
 
@@ -161,9 +162,8 @@ class HeadServer(JsonRESTServer):
         return containers
 
     def start_destroying_containers(self) -> Any:
-        assert self.running_containers is not None, (
-            "You must call start_containers before each call to destroy_containers."
-        )
+        if self.running_containers is None:
+            return
 
         used_worker_indices = set(
             container["worker_index"] for container in self.running_containers
