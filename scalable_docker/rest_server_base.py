@@ -53,18 +53,17 @@ class JsonRESTServer(ABC):
         start_time = perf_counter()
         try:
             result = self.get_response(**arguments)
+            status_code = 200
         except Exception as e:
-            result = (
-                {"error": f"Uncaught exception:\n\n{e}\n{traceback.format_exc()}"},
-                400,
-            )
+            result = {"error": f"Uncaught exception:\n\n{e}\n{traceback.format_exc()}"}
+            status_code = 400
         end_time = perf_counter()
 
         with self._call_timestamps_lock:
             self._call_timestamps.append(Timestamp(start=start_time, end=end_time))
 
         try:
-            return result, 200
+            return result, status_code
         except Exception:
             return {"error": f"Unable to convert response to json. {str(result)=}"}, 400
 
@@ -75,7 +74,9 @@ class JsonRESTServer(ABC):
             }
 
         function = kwargs["function"]
-        function_kwargs = {key: value for key, value in kwargs.items() if key != "function"}
+        function_kwargs = {
+            key: value for key, value in kwargs.items() if key != "function"
+        }
 
         if not isinstance(function, str):
             return {

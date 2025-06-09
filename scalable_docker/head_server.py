@@ -1,237 +1,220 @@
 from argparse import ArgumentParser
+from concurrent.futures import ThreadPoolExecutor
 import random
-import time
+from time import perf_counter
 from dataclasses import dataclass, field
 from collections.abc import Callable
-from typing import Any
+from typing import Any, TypedDict
 from beartype import beartype
 
+from scalable_docker.worker_server import Image
 from scalable_docker.rest_server_base import JsonRESTServer
-from scalable_docker.worker_client import WorkerClient, ResourceUsage
-
-
-MAX_HEALTH = 1.0
+from scalable_docker.rest_client_base import JsonRESTClient
 
 
 @beartype
-@dataclass(slots=True)
+class Container(TypedDict):
+    dockerfile_content: str
+    index: int
+    worker_index: int
+
+
+@beartype
 class Worker:
-    client: WorkerClient
-    health: float = MAX_HEALTH
-    estimated_resource_usage: ResourceUsage = field(
-        default_factory=lambda: ResourceUsage(
-            n_running_containers=0,
-            n_existing_containers=0,
-            fraction_memory_used=0.1,
-            fraction_disk_used=0.1,
-        )
-    )
+    url: str
+    client: JsonRESTClient
+    last_error_time: float | None
 
-    def health_and_resource_availability_score(
-        self, running_container_capacity: int, existing_container_capacity: int
-    ) -> float | int:
-        return self.health * self.estimated_resource_usage.resource_availability_score(
-            running_container_capacity=running_container_capacity,
-            existing_container_capacity=existing_container_capacity,
-        )
+    def __init__(self, url: str) -> None:
+        self.url = url
+        self.client = JsonRESTClient(url)
+        self.last_error_time = None
 
 
 @beartype
-@dataclass(frozen=True, slots=True)
-class Exponential:
-    initial_value: float | int
-    base: float | int
-
-    def __call__(self, x: float | int) -> float | int:
-        return self.initial_value * self.base**x
-
-
-@beartype
-@dataclass
 class HeadServer(JsonRESTServer):
-    host: str
-    port: int
-    worker_urls: list[str]
-    health_decay: float = 1e-3
-    max_retries_creating_sandbox_without_waiting: int = 8
-    max_retries_creating_sandbox_with_waiting: int = 8
-    wait_before_retry_creating_sandbox_seconds: Exponential = Exponential(
-        initial_value=2.0, base=2.0
-    )
-    running_container_capacity_per_worker: int = 32
-    existing_container_capacity_per_worker: int = 64
-    probability_worker_load_check: float = 1e-1
-    _workers: list[Worker] = field(init=False)
-    _container_name_to_worker: dict[str, Worker] = field(default_factory=lambda: {})
+    workers: list[Worker]
+    running_containers: list[Container] | None = None
+    delay_before_retrying_worker_after_error_seconds: float | int
 
-    def __post_init__(self) -> None:
-        super().__init__(port=self.port, host=self.host)
-
-        self.workers = [
-            Worker(client=WorkerClient(server_url=url)) for url in self.worker_urls
-        ]
+    def __init__(
+        self,
+        worker_urls: list[str],
+        host: str = "0.0.0.0",
+        port: int = 8080,
+        delay_before_retrying_worker_after_error_seconds: float | int = 3600,
+    ) -> None:
+        super().__init__(host=host, port=port)
+        self.workers = [Worker(url) for url in worker_urls]
+        self.running_containers = None
+        self.delay_before_retrying_worker_after_error_seconds = (
+            delay_before_retrying_worker_after_error_seconds
+        )
 
     def functions_exposed_through_api(self) -> dict[str, Callable]:
         return {
-            "create_sandbox": self.create_sandbox,
+            "build_images": self.build_images,
+            "number_healthy_workers": self.number_healthy_workers,
+            "start_containers": self.start_containers,
+            "start_destroying_containers": self.start_destroying_containers,
             "run_commands": self.run_commands,
-            "cleanup_sandbox": self.cleanup_sandbox,
-            "add_worker": self.add_worker,
         }
 
-    def choose_worker(self) -> Worker:
-        assert len(self.workers) > 0
-
-        scores = [
-            worker.health_and_resource_availability_score(
-                running_container_capacity=self.existing_container_capacity_per_worker,
-                existing_container_capacity=self.existing_container_capacity_per_worker,
-            )
-            for worker in self.workers
-        ]
-        total_score = sum(scores)
-
-        if total_score == 0:
-            probabilities_of_choosing_each_worker = [1.0] * len(self.workers)
-            print(
-                "WARNING: ALL WORKERS HAVE HEALTH AND RESOURCE AVAILABILITY SCORE 0. THIS IS MOST PROBABLY INDICATIVE THAT ALL WORKER SERVERS ARE DOWN OR OVERLOADED TO THE POINT WHERE THEY STOPPED WORKING"
-            )
-        else:
-            probabilities_of_choosing_each_worker = [
-                score / total_score for score in scores
-            ]
-
-        worker = random.choices(
-            self.workers, weights=probabilities_of_choosing_each_worker
-        )[0]
-
-        self.decay_worker_healths()
-
-        if random.uniform(0, 1) <= self.probability_worker_load_check:
-            resource_usage = worker.client.get_resource_usage()
-            if resource_usage is not None:
-                worker.estimated_resource_usage = resource_usage
-
-        return worker
-
-    def decay_worker_healths(self) -> None:
-        for worker in self.workers:
-            worker.health = (
-                1 - self.health_decay
-            ) * worker.health + self.health_decay * MAX_HEALTH
-
-    def create_sandbox(
-        self,
-        container_name: str,
-        dockerfile_content: str,
-        startup_commands: list[str],
-        max_memory_gb: float | int | None,
-        max_cpus: int | None,
-        max_lifespan_seconds: int | None,
-    ) -> Any:
-        if container_name in self._container_name_to_worker.keys():
-            return {"error": f"The container name '{container_name}' is already used."}
-
-        total_retries = (
-            self.max_retries_creating_sandbox_with_waiting
-            + self.max_retries_creating_sandbox_without_waiting
+    def is_error(self, worker_server_response: Any) -> bool:
+        return (
+            isinstance(worker_server_response, dict)
+            and "error" in worker_server_response.keys()
         )
 
-        if len(self.workers) == 0:
+    def build_images(self, images: list[Image]) -> Any:
+        with ThreadPoolExecutor() as executor:
+            futures = [
+                executor.submit(
+                    worker.client.call_server, function="build_images", images=images
+                )
+                for worker in self.workers
+            ]
+            responses = [future.result() for future in futures]
+
+        unsuccessful_responses: list[dict] = []
+        for worker, response in zip(self.workers, responses, strict=True):
+            if self.is_error(response):
+                worker.last_error_time = perf_counter()
+                unsuccessful_responses.append(response)
+            else:
+                worker.last_error_time = None
+
+        if len(unsuccessful_responses) > 0:
             return {
-                "error": "You must add at least one worker url before being able to create a sandbox."
+                "error": f"{len(unsuccessful_responses)} out of {len(self.workers)} failed when trying to build images. All the responses from the workers which failed are: {unsuccessful_responses}"
             }
 
-        for i_retry in range(total_retries):
-            worker = self.choose_worker()
+    def healthy_worker_indices(self) -> list[int]:
+        return [
+            i
+            for i, worker in enumerate(self.workers)
+            if worker.last_error_time is None
+            or worker.last_error_time
+            <= perf_counter() + self.delay_before_retrying_worker_after_error_seconds
+        ]
 
-            response = worker.client.create_sandbox(
-                container_name=container_name,
-                dockerfile_content=dockerfile_content,
-                startup_commands=startup_commands,
-                max_memory_gb=max_memory_gb,
-                max_cpus=max_cpus,
-                max_lifespan_seconds=max_lifespan_seconds,
+    def number_healthy_workers(self) -> int:
+        return len(self.healthy_worker_indices())
+
+    def start_containers(
+        self, dockerfile_contents: list[str]
+    ) -> list[Container] | dict:
+        if self.running_containers is not None:
+            return {
+                "error": "You must call start_destroying containers before every call to start_containers except for the first one."
+            }
+
+        healthy_worker_indices = self.healthy_worker_indices()
+
+        if len(healthy_worker_indices) == 0:
+            return {"error": "There are no healthy workers."}
+
+        dockerfile_contents_by_worker: list[list[str]] = [
+            [] for _ in range(len(healthy_worker_indices))
+        ]
+        for i, dockerfile_content in enumerate(dockerfile_contents):
+            dockerfile_contents_by_worker[i % len(healthy_worker_indices)].append(
+                dockerfile_content
             )
 
-            if not self.server_response_is_failure(response):
-                worker.estimated_resource_usage.n_running_containers += 1
-                self._container_name_to_worker[container_name] = worker
-                return response
-
-            worker.health = 0.0
-
-            if i_retry >= self.max_retries_creating_sandbox_without_waiting:
-                time.sleep(
-                    self.wait_before_retry_creating_sandbox_seconds(
-                        i_retry - self.max_retries_creating_sandbox_without_waiting
-                    )
+        with ThreadPoolExecutor() as executor:
+            futures = [
+                executor.submit(
+                    self.workers[i_healthy_worker].client.call_server,
+                    function="start_containers",
+                    dockerfile_contents=dockerfile_contents_for_worker,
                 )
-                print(
-                    f"WARNING: Failed to find worker that could successfully create a sandbox after {i_retry} retries."
+                for i_healthy_worker, dockerfile_contents_for_worker in zip(
+                    healthy_worker_indices, dockerfile_contents_by_worker, strict=True
                 )
+            ]
 
-        print(
-            f"WARNING: Failed to find a worker server that could successfully create a sandbox after {total_retries} retries. Gave up creating the sandbox."
+            responses = [future.result() for future in futures]
+
+        print(f"{responses=}")
+
+        unsuccessful_responses: list[dict] = []
+        containers: list[Container] = []
+        for i_healthy_worker, response in zip(
+            healthy_worker_indices, responses, strict=True
+        ):
+            if self.is_error(response):
+                self.workers[i_healthy_worker].last_error_time = perf_counter()
+                unsuccessful_responses.append(response)
+                continue
+            print(f"{response=}")
+            for container in response:
+                containers.append(container | {"worker_index": i_healthy_worker})
+
+        if len(unsuccessful_responses) > 0:
+            return {
+                "error": f"{len(unsuccessful_responses)} out of {len(healthy_worker_indices)} workers failed when trying to start containers. The failed responses are: {unsuccessful_responses}"
+            }
+
+        self.running_containers = containers
+
+        return containers
+
+    def start_destroying_containers(self) -> Any:
+        assert self.running_containers is not None, (
+            "You must call start_containers before each call to destroy_containers."
         )
 
-        return {"error": f"Failed to create sandbox after {total_retries} retries."}
+        used_worker_indices = set(
+            container["worker_index"] for container in self.running_containers
+        )
+
+        self.running_containers = None
+
+        with ThreadPoolExecutor() as executor:
+            futures = [
+                executor.submit(
+                    self.workers[i].client.call_server,
+                    function="start_destroying_containers",
+                )
+                for i in used_worker_indices
+            ]
+
+            responses = [future.result() for future in futures]
+
+        unsuccessful_responses = [
+            response for response in responses if self.is_error(response)
+        ]
+
+        if len(unsuccessful_responses) > 0:
+            return {
+                "error": f"{len(unsuccessful_responses)} out of {len(used_worker_indices)} workers failed when trying to stop containers. All the failed responses are: {unsuccessful_responses}"
+            }
 
     def run_commands(
         self,
-        container_name: str,
+        container: Container,
         commands: list[str],
         total_timeout_seconds: float | int,
         per_command_timeout_seconds: float | int,
-    ) -> Any:
-        worker = self._container_name_to_worker.get(container_name)
+    ) -> list[dict]:
+        worker = self.workers[container["worker_index"]]
 
-        if worker is None:
-            return {
-                "error": f"The sandbox with container name '{container_name}' has never been created."
-            }
-
-        response = worker.client.run_commands(
-            container_name=container_name,
+        response = worker.client.call_server(
+            function="run_commands",
+            container={
+                "dockerfile_content": container["dockerfile_content"],
+                "index": container["index"],
+            },
             commands=commands,
             total_timeout_seconds=total_timeout_seconds,
             per_command_timeout_seconds=per_command_timeout_seconds,
         )
 
-        if self.server_response_is_failure(response):
-            worker.health = 0.0
+        if self.is_error(response):
+            worker.last_error_time = perf_counter()
 
         return response
-
-    def cleanup_sandbox(self, container_name: str) -> Any:
-        worker = self._container_name_to_worker.get(container_name)
-
-        if worker is None:
-            return {
-                "error": f"The sandbox with container name '{container_name}' has never been created."
-            }
-
-        response = worker.client.cleanup_sandbox(container_name=container_name)
-
-        if self.server_response_is_failure(response):
-            worker.health = 0.0
-        else:
-            worker.estimated_resource_usage.n_running_containers -= 1
-
-        return response
-
-    def add_worker(self, worker_server_url: str) -> Any:
-        worker = Worker(client=WorkerClient(server_url=worker_server_url))
-        response = worker.client.get_resource_usage()
-
-        if self.server_response_is_failure(response):
-            return response
-
-        self.worker_urls.append(worker_server_url)
-        self.workers.append(worker)
-
-    def server_response_is_failure(self, response: Any) -> bool:
-        return isinstance(response, dict) and "error" in response.keys()
 
 
 @beartype
@@ -248,47 +231,7 @@ def main_cli() -> None:
         help="Comma separated list of worker server urls.",
     )
     parser.add_argument(
-        "--health-decay", type=float, default=1e-3, help="TO DO: Write help message."
-    )
-    parser.add_argument(
-        "--max-retries-creating-sandbox-without-waiting",
-        type=int,
-        default=8,
-        help="When failed to create a sandbox on a worker server, retry with a different server.",
-    )
-    parser.add_argument(
-        "--max-retries-creating-sandbox-with-waiting",
-        type=int,
-        default=8,
-        help="After --max-retries-creating-sandbox-without-waiting retries, do more retries with an exponentially increasing delay.",
-    )
-    parser.add_argument(
-        "--wait-before-retry-creating-sandbox-seconds-initial-value",
-        type=float,
-        default=2.0,
-        help="How long to wait during the first one of the --max-retries-creating-sandbox-without-waiting retries.",
-    )
-    parser.add_argument(
-        "--wait-before-retry-creating-sandbox-seconds-base",
-        type=float,
-        default=2.0,
-        help="At every subsequent one of the --max-retries-creating-sandbox-without-waiting retries, multiply the waiting time by this much.",
-    )
-    parser.add_argument(
-        "--running-container-capacity-per-worker",
-        default=32,
-        help="If the estimated number of containers running on a worker server goes above `running_container_capacity_per_worker / 2`, it will be less chosen when creating a new sandbox, with the probability decreasing with the number of containers running on it.",
-    )
-    parser.add_argument(
-        "--existing-container-capacity-per-worker",
-        default=64,
-        help="Same as --running-container-capacity-per-worker but also include containers that are not running but have not been deleted (i.e. the containers shown in the output of `docker ps -a`, not only those shown in the output of `docker ps`).",
-    )
-    parser.add_argument(
-        "--probability-worker-load-check",
-        type=float,
-        default=1e-1,
-        help="Each time a sandbox is created, do an extra API call to the worker used for it to get how many resources (e.g. ram, disk) it has with this probability. Workers with fewer resources will be chosen less often.",
+        "--delay-before-retrying-worker-after-error-seconds", type=int, default=3600
     )
     args = parser.parse_args()
 
@@ -296,16 +239,7 @@ def main_cli() -> None:
         host=args.host,
         port=args.port,
         worker_urls=args.worker_urls,
-        health_decay=args.health_decay,
-        max_retries_creating_sandbox_without_waiting=args.max_retries_creating_sandbox_without_waiting,
-        max_retries_creating_sandbox_with_waiting=args.max_retries_creating_sandbox_with_waiting,
-        wait_before_retry_creating_sandbox_seconds=Exponential(
-            initial_value=args.wait_before_retry_creating_sandbox_seconds_initial_value,
-            base=args.wait_before_retry_creating_sandbox_seconds_base,
-        ),
-        running_container_capacity_per_worker=args.running_container_capacity_per_worker,
-        existing_container_capacity_per_worker=args.existing_container_capacity_per_worker,
-        probability_worker_load_check=args.probability_worker_load_check,
+        delay_before_retrying_worker_after_error_seconds=args.delay_before_retrying_worker_after_error_seconds,
     )
 
     server.serve()

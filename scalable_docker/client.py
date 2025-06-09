@@ -1,12 +1,11 @@
-from uuid import uuid4
 import base64
 from shlex import quote
 import os
+from dataclasses import dataclass, asdict
 from typing import Any
 from beartype import beartype
-from dataclasses import dataclass
 
-from scalable_docker.rest_client_base import JsonRESTClient, AsyncJsonRESTClient
+from scalable_docker.rest_client_base import AsyncJsonRESTClient
 
 
 @beartype
@@ -18,194 +17,101 @@ class ProcessOutput:
 
 
 @beartype
-class RemoteDockerSandbox(JsonRESTClient):
-    def __init__(
-        self,
-        dockerfile_content: str,
-        startup_commands: list[str] | None = None,
-        max_memory_gb: float | int | None = 1.0,
-        max_cpus: int | None = 1,
-        max_lifespan_seconds: int | None = 10_000,
-        server_url: str | None = None,
-    ) -> None:
-        if server_url is None:
-            server_url = os.environ.get("DOCKER_SANDBOX_SERVER_URL")
-
-        if server_url is None:
-            raise ValueError(
-                "A sever url must be provided to RemoteDockerSandbox, either by passing a `server_url` argument to its constructor or by setting the `DOCKER_SANDBOX_SERVER_URL` system variable."
-            )
-
-        super().__init__(server_url=server_url)
-
-        self.container_name = f"sandbox-container-{uuid4()}"
-
-        creation_response = self.call_server(
-            function="create_sandbox",
-            container_name=self.container_name,
-            dockerfile_content=dockerfile_content,
-            startup_commands=startup_commands if startup_commands is not None else [],
-            max_memory_gb=max_memory_gb,
-            max_cpus=max_cpus,
-            max_lifespan_seconds=max_lifespan_seconds,
-        )
-
-        if self.server_response_is_error(creation_response):
-            raise ValueError(
-                f"Failed creating sandbox. The server response is: {creation_response}"
-            )
-
-    def server_response_is_error(self, response: Any) -> bool:
-        return isinstance(response, dict) and "error" in response.keys()
-
-    def run_commands(
-        self,
-        commands: list[str],
-        total_timeout_seconds: float | int = 5.0,
-        per_command_timeout_seconds: float | int = 4.0,
-    ) -> list[ProcessOutput]:
-        response = self.call_server(
-            function="run_commands",
-            container_name=self.container_name,
-            commands=commands,
-            total_timeout_seconds=total_timeout_seconds,
-            per_command_timeout_seconds=per_command_timeout_seconds,
-        )
-
-        if self.server_response_is_error(response):
-            raise ValueError(
-                f"Failed running commands in the sandbox. The server response is: {response}"
-            )
-
-        return [ProcessOutput(**output) for output in response]
-
-    def cleanup(self) -> None:
-        response = self.call_server(
-            function="cleanup_sandbox", container_name=self.container_name
-        )
-
-        if self.server_response_is_error(response):
-            raise ValueError(
-                f"Failed sandbox cleanup. The server response is: {response}"
-            )
-
-    def upload_file(self, filename: str, content: str) -> ProcessOutput:
-        command = RemoteDockerSandbox.upload_file_command(
-            filename=filename, content=content
-        )
-        return self.run_commands([command])[0]
-
-    @staticmethod
-    def upload_file_command(filename: str, content: str) -> str:
-        encoded_data = base64.b64encode(content.encode()).decode()
-        return f"echo {encoded_data} | base64 -d > {quote(filename)}"
+@dataclass(frozen=True, slots=True)
+class Image:
+    dockerfile_content: str
+    max_cpus: float | int = 1
+    max_memory_gigabytes: float | int = 1.0
 
 
 @beartype
-class AsyncRemoteDockerSandbox(AsyncJsonRESTClient):
-    container_name: str
+@dataclass(frozen=True, slots=True)
+class Container:
+    dockerfile_content: str
+    index: int
+    worker_index: int
 
-    @classmethod
-    async def create_sandbox(
-        cls,
-        dockerfile_content: str,
-        startup_commands: list[str] | None = None,
-        max_memory_gb: float | int | None = 1.0,
-        max_cpus: int | None = 1,
-        max_lifespan_seconds: int | None = 10_000,
-        server_url: str | None = None,
-    ) -> "AsyncRemoteDockerSandbox":
+
+@beartype
+@dataclass(frozen=True, slots=True)
+class ScalableDockerServerError(Exception):
+    server_response: Any
+
+
+@beartype
+class ScalableDockerClient(AsyncJsonRESTClient):
+    server_url: str
+
+    def __init__(self, server_url: str | None = None) -> None:
         if server_url is None:
-            server_url = os.environ.get("DOCKER_SANDBOX_SERVER_URL")
+            server_url = os.environ.get("SCALABLE_DOCKER_SERVER_URL")
 
         if server_url is None:
             raise ValueError(
-                "A sever url must be provided to RemoteDockerSandbox, either by passing a `server_url` argument to its constructor or by setting the `DOCKER_SANDBOX_SERVER_URL` system variable."
+                "A sever url must be provided to RemoteDockerSandbox, either by passing a `server_url` argument to its constructor or by setting the `SCALABLE_DOCKER_SERVER_URL` system variable."
             )
 
-        sandbox = cls(server_url=server_url)
+        self.server_url = server_url
 
-        sandbox.container_name = f"sandbox-container-{uuid4()}"
+    def is_error(self, server_response: Any) -> bool:
+        return isinstance(server_response, dict) and "error" in server_response.keys()
 
-        creation_response = await sandbox.call_server(
-            function="create_sandbox",
-            container_name=sandbox.container_name,
-            dockerfile_content=dockerfile_content,
-            startup_commands=startup_commands if startup_commands is not None else [],
-            max_memory_gb=max_memory_gb,
-            max_cpus=max_cpus,
-            max_lifespan_seconds=max_lifespan_seconds,
+    async def build_images(self, images: list[Image]) -> None:
+        response = await self.call_server(
+            function="build_images", images=[asdict(image) for image in images]
         )
 
-        if sandbox.server_response_is_error(creation_response):
-            raise ValueError(
-                f"Failed creating sandbox. The server response is: {creation_response}"
-            )
-        
-        return sandbox
+        if self.is_error(response):
+            raise ScalableDockerServerError(response)
 
-    def server_response_is_error(self, response: Any) -> bool:
-        return isinstance(response, dict) and "error" in response.keys()
+    async def number_healthy_workers(self) -> int:
+        response = await self.call_server(function="number_healthy_workers")
+
+        if self.is_error(response):
+            raise ScalableDockerServerError(response)
+
+        return response
+
+    async def start_containers(self, dockerfile_contents: list[str]) -> list[Container]:
+        response = await self.call_server(
+            function="start_containers", dockerfile_contents=dockerfile_contents
+        )
+
+        print(f"{response=}")
+
+        if self.is_error(response):
+            raise ScalableDockerServerError(response)
+
+        return [Container(**container) for container in response]
+
+    async def start_destroying_containers(self) -> None:
+        response = await self.call_server(function="start_destroying_containers")
+
+        if self.is_error(response):
+            raise ScalableDockerServerError(response)
 
     async def run_commands(
         self,
+        container: Container,
         commands: list[str],
-        total_timeout_seconds: float | int = 5.0,
-        per_command_timeout_seconds: float | int = 4.0,
+        total_timeout_seconds: float | int = 5,
+        per_command_timeout_seconds: float | int = 3,
     ) -> list[ProcessOutput]:
         response = await self.call_server(
             function="run_commands",
-            container_name=self.container_name,
+            container=asdict(container),
             commands=commands,
             total_timeout_seconds=total_timeout_seconds,
             per_command_timeout_seconds=per_command_timeout_seconds,
         )
 
-        if self.server_response_is_error(response):
-            raise ValueError(
-                f"Failed running commands in the sandbox. The server response is: {response}"
-            )
+        if self.is_error(response):
+            raise ScalableDockerServerError(response)
 
         return [ProcessOutput(**output) for output in response]
 
-    async def cleanup(self) -> None:
-        response = await self.call_server(
-            function="cleanup_sandbox", container_name=self.container_name
-        )
-
-        if self.server_response_is_error(response):
-            raise ValueError(
-                f"Failed sandbox cleanup. The server response is: {response}"
-            )
-
-    async def upload_file(self, filename: str, content: str) -> ProcessOutput:
-        command = RemoteDockerSandbox.upload_file_command(
-            filename=filename, content=content
-        )
-        outputs = await self.run_commands([command])
-        return outputs[0]
-
-    @staticmethod
-    def upload_file_command(filename: str, content: str) -> str:
-        encoded_data = base64.b64encode(content.encode()).decode()
-        return f"echo {encoded_data} | base64 -d > {quote(filename)}"
-
 
 @beartype
-def add_worker(worker_server_url: str, head_server_url: str | None) -> None:
-    if head_server_url is None:
-        head_server_url = os.environ.get("DOCKER_SANDBOX_SERVER_URL")
-
-    if head_server_url is None:
-        raise ValueError(
-            "A sever url must be provided to RemoteDockerSandbox, either by passing a `server_url` argument to its constructor or by setting the `DOCKER_SANDBOX_SERVER_URL` system variable."
-        )
-
-    response = JsonRESTClient(head_server_url).call_server(
-        function="add_worker", worker_server_url=worker_server_url
-    )
-
-    if response is not None:
-        message = f"FAILURE ADDING NEW WORKER. Server response: {response}"
-        print(f"FAILURE ADDING NEW WORKER. Server response: {response}")
-        raise ValueError(message)
+def upload_file_command(filename: str, content: str) -> str:
+    encoded_data = base64.b64encode(content.encode()).decode()
+    return f"echo {encoded_data} | base64 -d > {quote(filename)}"

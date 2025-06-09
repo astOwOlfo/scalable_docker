@@ -1,12 +1,15 @@
+from hashlib import sha256
 from argparse import ArgumentParser
-from uuid import uuid4
+from pathlib import Path
 from os import makedirs, path
+from shutil import rmtree
+import yaml
 from time import perf_counter
-from subprocess import run, PIPE, TimeoutExpired
-from threading import Thread
-from dataclasses import dataclass, asdict
-from collections.abc import Callable
-from typing import Any
+from subprocess import run, PIPE, TimeoutExpired, Popen
+from collections import Counter
+from dataclasses import asdict
+from collections.abc import Callable, Iterable
+from typing import TypedDict
 from beartype import beartype
 
 from scalable_docker.rest_server_base import JsonRESTServer
@@ -14,185 +17,202 @@ from scalable_docker.client import ProcessOutput
 
 
 @beartype
-@dataclass(frozen=True, slots=True)
-class Failure:
-    message: str
+class Image(TypedDict):
+    dockerfile_content: str
+    max_cpus: float | int
+    max_memory_gigabytes: float | int
 
 
 @beartype
-@dataclass(frozen=True, slots=True)
-class Dockerfile:
-    content: str
-
-
-@beartype
-@dataclass(frozen=True, slots=True)
-class Image:
-    name: str
-    dockerfile: Dockerfile
-
-
-@beartype
-@dataclass(frozen=True, slots=True)
-class Container:
-    name: str
-    image: Image
-    startup_commands: list[str]
-    max_memory_gb: float | int | None
-    max_cpus: float | int | None
-    max_lifespan_seconds: float | int | None
-
-    def __hash__(self) -> int:
-        return hash(self.name)
+class Container(TypedDict):
+    dockerfile_content: str
+    index: int
 
 
 @beartype
 class WorkerServer(JsonRESTServer):
+    working_directory: str
+    docker_compose_yaml_path: str
+    built_dockerfile_contents: list[str] | None
+    running_containers: list[Container] | None
+    destroy_sandboxes_process: Popen | None
+
     def __init__(
         self,
         host: str = "0.0.0.0",
         port: int = 8080,
-        working_directory: str = "~/.scalable_docker/",
+        working_directory: str = path.join(Path.home(), ".scalable_docker"),
     ) -> None:
         super().__init__(host=host, port=port)
-        self.used_container_names: set[str] = set()
-        self.images: dict[Dockerfile, Image] = {}
-        self.build_image_threads: dict[Image, Thread] = {}
-        self.build_image_failures: dict[Image, Failure] = {}
-        self.start_container_threads: dict[Container, Thread] = {}
-        self.start_container_failures: dict[Container, Failure] = {}
-        self.running_containers_by_name: dict[str, Container] = {}
         self.working_directory = working_directory
-        makedirs(working_directory, exist_ok=True)
+        self.docker_compose_yaml_path = path.join(
+            working_directory, "docker-compose.yaml"
+        )
+        self.built_dockerfile_contents = None
+        self.running_containers = None
+        self.destroy_sandboxes_process = None
 
     def functions_exposed_through_api(self) -> dict[str, Callable]:
         return {
-            "create_sandbox": self.create_sandbox,
+            "build_images": self.build_images,
+            "start_containers": self.start_containers,
+            "start_destroying_containers": self.start_destroying_containers,
             "run_commands": self.run_commands,
-            "cleanup_sandbox": self.cleanup_sandbox,
-            "get_resource_usage": self.get_resource_usage,
         }
 
-    def create_sandbox(
-        self,
-        container_name: str,
-        dockerfile_content: str,
-        startup_commands: list[str],
-        max_memory_gb: float | int | None,
-        max_cpus: float | int | None,
-        max_lifespan_seconds: float | int | None,
-    ) -> Any:
-        if container_name in self.used_container_names:
-            return {"error": f"Sandbox id '{container_name}' is already used."}
-        self.used_container_names.add(container_name)
+    def build_images(self, images: list[Image]) -> None:
+        if self.running_containers is not None:
+            self.start_destroying_containers()
+            self.wait_until_done_destroying_containers()
 
-        dockerfile = Dockerfile(content=dockerfile_content)
-        image: Image | None = self.images.get(dockerfile)
-        already_built = image is not None
-        if not already_built:
-            image = Image(
-                name=f"scalable-docker-image-{uuid4()}", dockerfile=dockerfile
-            )
-            self.images[dockerfile] = image
-            build_thread = Thread(target=self.build_image, args=(image,))
-            build_thread.start()
-            self.build_image_threads[image] = build_thread
+        run(["docker", "system", "prune", "-a", "--volumes", "--force"])
+        rmtree(self.working_directory, ignore_errors=True)
 
-        container = Container(
-            name=container_name,
-            image=image,
-            startup_commands=startup_commands,
-            max_memory_gb=max_memory_gb,
-            max_cpus=max_cpus,
-            max_lifespan_seconds=max_lifespan_seconds,
+        docker_compose_yaml: dict[str, dict] = {"services": {}}
+        for image in unique(images):
+            image_name = self.image_name(dockerfile_content=image["dockerfile_content"])
+            image_directory = path.join(self.working_directory, image_name)
+            rmtree(image_directory, ignore_errors=True)
+            makedirs(image_directory)
+            with open(path.join(image_directory, "Dockerfile"), "w") as f:
+                f.write(image["dockerfile_content"])
+            docker_compose_yaml["services"][image_name] = {
+                "build": image_directory,
+                "command": "tail -f /dev/null",
+                "deploy": {
+                    "resources": {
+                        "limits": {
+                            "cpus": image["max_cpus"],
+                            "memory": f"{image['max_memory_gigabytes']}gb",
+                        }
+                    }
+                },
+            }
+
+        with open(self.docker_compose_yaml_path, "w") as f:
+            yaml.dump(docker_compose_yaml, f)
+
+        run(["docker", "compose", "-f", self.docker_compose_yaml_path, "build"])
+
+        self.built_dockerfile_contents = list(
+            set(image["dockerfile_content"] for image in images)
         )
-        start_thread = Thread(target=self.start_container, args=(container,))
-        self.start_container_threads[container] = start_thread
-        start_thread.start()
 
-        self.running_containers_by_name[container.name] = container
+    def image_name(self, dockerfile_content: str) -> str:
+        return sha256(dockerfile_content.encode()).hexdigest()
 
-    def build_image(self, image: Image) -> None:
-        docker_directory = path.join(self.working_directory, image.name)
-        makedirs(docker_directory)
+    def start_containers(self, dockerfile_contents: list[str]) -> list[Container]:
+        assert self.built_dockerfile_contents is not None, (
+            "You must call build_images before calling start_containers."
+        )
 
-        with open(path.join(docker_directory, "Dockerfile"), "w") as f:
-            f.write(image.dockerfile.content)
+        assert self.running_containers is None, (
+            "You must call cleanup_containers before calling start_containers (except for the first call to start_containers)."
+        )
 
-        output = run(["docker", "build", "-t", image.name, docker_directory])
+        self.wait_until_done_destroying_containers()
 
-        built_successfully = output.returncode == 0
-        if not built_successfully:
-            self.build_image_failures[image] = Failure(
-                f"Failed building image.\nDocker build exit code: {output.returncode}\n\nDocker build stdout: {output.stdout}\n\nDocker build stderr: {output.stderr}"
+        assert all(
+            dockerfile_content in self.built_dockerfile_contents
+            for dockerfile_content in dockerfile_contents
+        ), (
+            "The dockerfile_contents argument to start_containers should only contain dockerfiles that have been given to the previous call to build_images."
+        )
+
+        docker_compose_up_command: list[str] = [
+            "docker",
+            "compose",
+            "-f",
+            self.docker_compose_yaml_path,
+            "up",
+            "-d",
+        ]
+        for dockerfile_content, count in Counter(dockerfile_contents).items():
+            image_name = self.image_name(dockerfile_content=dockerfile_content)
+            docker_compose_up_command += ["--scale", f"{image_name}={count}"]
+
+        run(docker_compose_up_command)
+
+        containers: list[Container] = []
+        for i, dockerfile_content in enumerate(dockerfile_contents):
+            image_name = self.image_name(dockerfile_content=dockerfile_content)
+            containers.append(
+                {
+                    "dockerfile_content": dockerfile_content,
+                    "index": dockerfile_contents[:i].count(dockerfile_content),
+                }
             )
 
-    def start_container(self, container: Container) -> None:
-        build_thread = self.build_image_threads.get(container.image)
-        if build_thread is not None:
-            build_thread.join()
+        self.running_containers = containers
 
-        if container.image in self.build_image_failures:
+        return containers
+
+    def start_destroying_containers(self) -> None:
+        assert self.running_containers is not None, (
+            "You must call start_containers before each call to destroy_containers."
+        )
+
+        self.running_containers = None
+
+        self.destroy_sandboxes_process = Popen(
+            [
+                "docker",
+                "compose",
+                "-f",
+                self.docker_compose_yaml_path,
+                "down",
+                "--volumes",
+            ],
+            stdout=PIPE,
+            stderr=PIPE,
+            text=True,
+            errors="replace",
+        )
+
+    def wait_until_done_destroying_containers(self) -> None:
+        if self.destroy_sandboxes_process is None:
             return
 
-        command = ["docker", "run", "-d", "--rm", "--name", container.name]
-        if container.max_memory_gb is not None:
-            command += ["--memory", f"{container.max_memory_gb}gb"]
-        if container.max_cpus is not None:
-            command += ["--cpus", str(container.max_cpus)]
-        command += [
-            "--tty",
-            container.image.name,
-            "/bin/bash",
-            "-c",
-            f"sleep {container.max_lifespan_seconds if container.max_lifespan_seconds is not None else 'infinity'}",
-        ]
+        stdout, stderr = self.destroy_sandboxes_process.communicate()
 
-        output = run(command, stdout=PIPE, stderr=PIPE, text=True, errors="replace")
+        assert self.destroy_sandboxes_process.returncode == 0, (
+            f"Error trying to destroy sandboxes: docker compose down returned with a nonzero exit code.\nExit code: {self.destroy_sandboxes_process.returncode}\nStdout:{stdout}\nStderr:{stderr}"
+        )
 
-        started_successfully = output.returncode == 0
-        if not started_successfully:
-            self.start_container_failures[container] = Failure(
-                f"Failed starting container '{container.name}'.\nDocker run exit code: {output.returncode}\n\nDocker run stdout: {output.stdout}\n\nDocker run stderr: {output.stderr}"
-            )
-
-        for command in container.startup_commands:
-            output = run(["docker", "exec", container.name, "/bin/bash", "-c", command])
-            success = output.returncode == 0
-            if not success:
-                self.start_container_failures[container] = Failure(
-                    f"Failed starting container '{container.name}'.\nA startup command exited with nonzero exit code.\n\nFailed command: {command}\n\nExit code:{output.returncode}\n\nStdout{output.stdout}\n\nStderr:{output.stderr}"
-                )
-
-    def wait_for_container_to_start(self, container: Container) -> None:
-        if container in self.start_container_threads:
-            self.start_container_threads[container].join()
-
-    def get_container_or_error(self, container_name: str) -> Container | Failure:
-        container = self.running_containers_by_name.get(container_name)
-        if container is None:
-            return Failure(
-                f"The container with name '{container_name}' does not exist, has been stopped, or died."
-            )
-
-        self.wait_for_container_to_start(container)
-
-        build_failure = self.build_image_failures.get(container.image)
-        if build_failure is not None:
-            return build_failure
-
-        start_failure = self.start_container_failures.get(container)
-        if start_failure is not None:
-            return start_failure
-
-        return container
+        self.destroy_sandboxes_process = None
 
     def run_single_command(
         self, container: Container, command: str, timeout_seconds: float | int
     ) -> ProcessOutput:
+        assert (
+            self.destroy_sandboxes_process is None
+            and self.running_containers is not None
+        ), "You must call start_containers before calling run_single_command."
+
+        assert self.destroy_sandboxes_process is None
+
+        assert self.running_containers is not None, (
+            "You must call start_containers before calling run_commands."
+        )
+
+        assert container in self.running_containers, (
+            "The container argument to run_commands must be one of the values returned by the previous call to start_containers."
+        )
+
         try:
             output = run(
-                ["docker", "exec", container.name, "/bin/bash", "-c", command],
+                [
+                    "docker",
+                    "compose",
+                    "-f",
+                    self.docker_compose_yaml_path,
+                    "exec",
+                    f"--index={container['index']}",
+                    self.image_name(dockerfile_content=container["dockerfile_content"]),
+                    "/bin/bash",
+                    "-c",
+                    command,
+                ],
                 timeout=timeout_seconds,
                 stdout=PIPE,
                 stderr=PIPE,
@@ -207,14 +227,15 @@ class WorkerServer(JsonRESTServer):
 
     def run_commands(
         self,
-        container_name: str,
+        container: Container,
         commands: list[str],
         total_timeout_seconds: float | int,
         per_command_timeout_seconds: float | int,
-    ) -> Any:
-        container = self.get_container_or_error(container_name)
-        if isinstance(container, Failure):
-            return {"error": container.message}
+    ) -> list[dict]:
+        assert (
+            self.destroy_sandboxes_process is None
+            and self.running_containers is not None
+        ), "You must call start_containers before calling run_commands."
 
         start_time = perf_counter()
 
@@ -239,66 +260,62 @@ class WorkerServer(JsonRESTServer):
 
         return [asdict(output) for output in outputs]
 
-    def cleanup_sandbox(self, container_name: str) -> Any:
-        container = self.get_container_or_error(container_name)
-        if isinstance(container, Failure):
-            return {"error": container.message}
 
-        Thread(target=self.cleanup_sandbox_blocking, args=(container,)).start()
+@beartype
+def unique(xs: Iterable) -> list:
+    unique_xs = []
+    for x in xs:
+        if x not in unique_xs:
+            unique_xs.append(x)
+    return unique_xs
 
-    def cleanup_sandbox_blocking(self, container: Container) -> None:
-        run(["docker", "stop", container.name], stdout=PIPE, stderr=PIPE)
-        run(["docker", "rm", container.name], stdout=PIPE, stderr=PIPE)
 
-    def get_resource_usage(self) -> Any:
-        return {
-            "n_running_containers": int(
-                run(
-                    "docker ps -q | wc -l",
-                    stdout=PIPE,
-                    stderr=PIPE,
-                    shell=True,
-                    errors="replace",
-                    text=True,
-                ).stdout.strip()
+"""
+if __name__ == "__main__":
+    DOCKERFILE_CONTENT_1 = "FROM ubuntu:latest\nRUN touch hello-1"
+    DOCKERFILE_CONTENT_2 = "FROM ubuntu:latest\nRUN touch hello-2"
+    DOCKERFILE_CONTENT_3 = "FROM ubuntu:latest\nRUN touch hello-3"
+
+    worker = WorkerServer()
+
+    worker.build_images(
+        images=[
+            {
+                "dockerfile_content": DOCKERFILE_CONTENT_1,
+                "max_cpus": 1,
+                "max_memory_gigabytes": 1,
+            },
+            {
+                "dockerfile_content": DOCKERFILE_CONTENT_2,
+                "max_cpus": 1,
+                "max_memory_gigabytes": 1,
+            },
+            {
+                "dockerfile_content": DOCKERFILE_CONTENT_3,
+                "max_cpus": 1,
+                "max_memory_gigabytes": 1,
+            },
+        ]
+    )
+
+    containers: list[Container] = worker.start_containers(
+        [DOCKERFILE_CONTENT_1, DOCKERFILE_CONTENT_2, DOCKERFILE_CONTENT_2]
+    )
+
+    for container in containers:
+        print(
+            container,
+            worker.run_commands(
+                container,
+                ["ls"],
+                total_timeout_seconds=1,
+                per_command_timeout_seconds=2,
             ),
-            "n_existing_containers": int(
-                run(
-                    "docker ps -q | wc -l",
-                    stdout=PIPE,
-                    stderr=PIPE,
-                    shell=True,
-                    errors="replace",
-                    text=True,
-                ).stdout.strip()
-            ),
-            "fraction_memory_used": float(
-                run(
-                    "free | awk '/Mem:/ {printf \"%.2f%%\\n\", $3/$2 * 100}'",
-                    stdout=PIPE,
-                    stderr=PIPE,
-                    shell=True,
-                    errors="replace",
-                    text=True,
-                )
-                .stdout.strip()
-                .removesuffix("%")
-            )
-            / 100,
-            "fraction_disk_used": float(
-                run(
-                    "df / | awk 'NR==2 {print $5}'",
-                    stdout=PIPE,
-                    stderr=PIPE,
-                    shell=True,
-                    errors="replace",
-                    text=True,
-                )
-                .stdout.strip()
-                .removesuffix("%")
-            )
-            / 100,
-        }
+        )
+
+    worker.start_destroying_containers()
+    worker.wait_until_done_destroying_containers()
+"""
 
 
 @beartype
@@ -306,7 +323,11 @@ def main_cli() -> None:
     parser = ArgumentParser()
     parser.add_argument("--host", type=str, default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8080)
-    parser.add_argument("--working-directory", type=str, default="~/.scalable_docker/")
+    parser.add_argument(
+        "--working-directory",
+        type=str,
+        default=path.join(Path.home(), ".scalable_docker"),
+    )
     args = parser.parse_args()
 
     server = WorkerServer(

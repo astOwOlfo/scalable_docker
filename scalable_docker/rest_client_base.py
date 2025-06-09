@@ -38,6 +38,8 @@ class JsonRESTClient:
                 "error": f"Error communicating with server.\nStatus code: {response.status_code}.\nResponse json: {parsed_response}"
             }
 
+        print(f"{parsed_response=}")
+
         return parsed_response
 
 
@@ -69,6 +71,8 @@ class AsyncJsonRESTClient:
                         return {
                             "error": f"Error communicating with server.\nStatus code: {response.status}.\nResponse json: {parsed_response}"
                         }
+
+                    print(f"aiohttp {parsed_response=}")
 
                     return parsed_response
         except Exception as e:
