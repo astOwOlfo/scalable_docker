@@ -39,6 +39,13 @@ class ScalableDockerServerError(Exception):
 
 
 @beartype
+@dataclass(frozen=True, slots=True)
+class MultiCommandTimeout:
+    seconds_per_command: int | float
+    total_seconds: int | float
+
+
+@beartype
 class ScalableDockerClient(AsyncJsonRESTClient):
     server_url: str
 
@@ -94,15 +101,14 @@ class ScalableDockerClient(AsyncJsonRESTClient):
         self,
         container: Container,
         commands: list[str],
-        total_timeout_seconds: float | int = 5,
-        per_command_timeout_seconds: float | int = 3,
+        timeout: MultiCommandTimeout,
     ) -> list[ProcessOutput]:
         response = await self.call_server(
             function="run_commands",
             container=asdict(container),
             commands=commands,
-            total_timeout_seconds=total_timeout_seconds,
-            per_command_timeout_seconds=per_command_timeout_seconds,
+            total_timeout_seconds=timeout.seconds_per_command,
+            per_command_timeout_seconds=timeout.total_seconds,
         )
 
         if self.is_error(response):
