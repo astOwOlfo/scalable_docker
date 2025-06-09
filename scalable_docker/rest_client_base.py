@@ -56,7 +56,7 @@ class AsyncJsonRESTClient:
 
     async def call_server(self, **kwargs) -> Any:
         try:
-            async with aiohttp.ClientSession(timeout=None) as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout()) as session:
                 async with session.post(
                     self.endpoint,
                     json=kwargs,
