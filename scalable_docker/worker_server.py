@@ -270,54 +270,6 @@ def unique(xs: Iterable) -> list:
     return unique_xs
 
 
-"""
-if __name__ == "__main__":
-    DOCKERFILE_CONTENT_1 = "FROM ubuntu:latest\nRUN touch hello-1"
-    DOCKERFILE_CONTENT_2 = "FROM ubuntu:latest\nRUN touch hello-2"
-    DOCKERFILE_CONTENT_3 = "FROM ubuntu:latest\nRUN touch hello-3"
-
-    worker = WorkerServer()
-
-    worker.build_images(
-        images=[
-            {
-                "dockerfile_content": DOCKERFILE_CONTENT_1,
-                "max_cpus": 1,
-                "max_memory_gigabytes": 1,
-            },
-            {
-                "dockerfile_content": DOCKERFILE_CONTENT_2,
-                "max_cpus": 1,
-                "max_memory_gigabytes": 1,
-            },
-            {
-                "dockerfile_content": DOCKERFILE_CONTENT_3,
-                "max_cpus": 1,
-                "max_memory_gigabytes": 1,
-            },
-        ]
-    )
-
-    containers: list[Container] = worker.start_containers(
-        [DOCKERFILE_CONTENT_1, DOCKERFILE_CONTENT_2, DOCKERFILE_CONTENT_2]
-    )
-
-    for container in containers:
-        print(
-            container,
-            worker.run_commands(
-                container,
-                ["ls"],
-                total_timeout_seconds=1,
-                per_command_timeout_seconds=2,
-            ),
-        )
-
-    worker.start_destroying_containers()
-    worker.wait_until_done_destroying_containers()
-"""
-
-
 @beartype
 def main_cli() -> None:
     parser = ArgumentParser()

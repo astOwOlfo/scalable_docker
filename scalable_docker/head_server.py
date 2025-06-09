@@ -137,8 +137,6 @@ class HeadServer(JsonRESTServer):
 
             responses = [future.result() for future in futures]
 
-        print(f"{responses=}")
-
         unsuccessful_responses: list[dict] = []
         containers: list[Container] = []
         for i_healthy_worker, response in zip(
@@ -148,7 +146,6 @@ class HeadServer(JsonRESTServer):
                 self.workers[i_healthy_worker].last_error_time = perf_counter()
                 unsuccessful_responses.append(response)
                 continue
-            print(f"{response=}")
             for container in response:
                 containers.append(container | {"worker_index": i_healthy_worker})
 

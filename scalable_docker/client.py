@@ -84,8 +84,6 @@ class ScalableDockerClient(AsyncJsonRESTClient):
             function="start_containers", dockerfile_contents=dockerfile_contents
         )
 
-        print(f"{response=}")
-
         if self.is_error(response):
             raise ScalableDockerServerError(response)
 
