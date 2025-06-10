@@ -47,7 +47,7 @@ class JsonRESTServer(ABC):
                 response = [asdict(timestamp) for timestamp in self._call_timestamps]
             return response, 200
 
-        app.run(host=self.host, port=self.port, threaded=True, threads=256)
+        app.run(host=self.host, port=self.port, threaded=True)
 
     def _get_response_or_error(self, arguments: Any) -> tuple[Any, int]:
         start_time = perf_counter()
