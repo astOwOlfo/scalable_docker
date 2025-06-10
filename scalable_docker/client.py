@@ -49,7 +49,7 @@ class MultiCommandTimeout:
 class ScalableDockerClient(AsyncJsonRESTClient):
     server_url: str
 
-    def __init__(self, server_url: str | None = None) -> None:
+    def __init__(self, *args, server_url: str | None = None, **kwargs) -> None:
         if server_url is None:
             server_url = os.environ.get("SCALABLE_DOCKER_SERVER_URL")
 
@@ -58,7 +58,7 @@ class ScalableDockerClient(AsyncJsonRESTClient):
                 "A sever url must be provided to RemoteDockerSandbox, either by passing a `server_url` argument to its constructor or by setting the `SCALABLE_DOCKER_SERVER_URL` system variable."
             )
 
-        self.server_url = server_url
+        super().__init__(*args, server_url=server_url, **kwargs)
 
     def is_error(self, server_response: Any) -> bool:
         return isinstance(server_response, dict) and "error" in server_response.keys()
