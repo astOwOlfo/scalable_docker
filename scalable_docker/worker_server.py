@@ -106,9 +106,8 @@ class WorkerServer(JsonRESTServer):
             "You must call build_images before calling start_containers."
         )
 
-        assert self.running_containers is None, (
-            "You must call cleanup_containers before calling start_containers (except for the first call to start_containers)."
-        )
+        if self.running_containers is not None:
+            self.start_destroying_containers()
 
         self.wait_until_done_destroying_containers()
 
