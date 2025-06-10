@@ -115,10 +115,14 @@ class HeadServer(JsonRESTServer):
         if len(healthy_worker_indices) == 0:
             return {"error": "There are no healthy workers."}
 
+        container_indices_by_worker: list[list[int]] = [
+            [] for _ in range(len(healthy_worker_indices))
+        ]
         dockerfile_contents_by_worker: list[list[str]] = [
             [] for _ in range(len(healthy_worker_indices))
         ]
         for i, dockerfile_content in enumerate(dockerfile_contents):
+            container_indices_by_worker[i % len(healthy_worker_indices)].append(i)
             dockerfile_contents_by_worker[i % len(healthy_worker_indices)].append(
                 dockerfile_content
             )
@@ -138,25 +142,30 @@ class HeadServer(JsonRESTServer):
             responses = [future.result() for future in futures]
 
         unsuccessful_responses: list[dict] = []
-        containers: list[Container] = []
-        for i_healthy_worker, response in zip(
-            healthy_worker_indices, responses, strict=True
+        containers: list[Container | None] = [None] * len(dockerfile_contents)
+        for i_healthy_worker, response, container_indices in zip(
+            healthy_worker_indices, responses, container_indices_by_worker, strict=True
         ):
             if self.is_error(response):
                 self.workers[i_healthy_worker].last_error_time = perf_counter()
                 unsuccessful_responses.append(response)
                 continue
-            for container in response:
-                containers.append(container | {"worker_index": i_healthy_worker})
+            for i, container in enumerate(response):
+                assert containers[container_indices[i]] is None
+                containers[container_indices[i]] = container | {
+                    "worker_index": i_healthy_worker
+                }
 
         if len(unsuccessful_responses) > 0:
             return {
                 "error": f"{len(unsuccessful_responses)} out of {len(healthy_worker_indices)} workers failed when trying to start containers. The failed responses are: {unsuccessful_responses}"
             }
 
-        self.running_containers = containers
+        assert all(container is not None for container in containers)
 
-        return containers
+        self.running_containers = containers  # type: ignore
+
+        return containers  # type: ignore
 
     def start_destroying_containers(self) -> Any:
         if self.running_containers is None:
