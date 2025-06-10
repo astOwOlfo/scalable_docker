@@ -1,8 +1,6 @@
 from argparse import ArgumentParser
 from concurrent.futures import ThreadPoolExecutor
-import random
 from time import perf_counter
-from dataclasses import dataclass, field
 from collections.abc import Callable
 from typing import Any, TypedDict
 from beartype import beartype
@@ -70,7 +68,7 @@ class HeadServer(JsonRESTServer):
         )
 
     def build_images(self, images: list[Image]) -> Any:
-        with ThreadPoolExecutor() as executor:
+        with ThreadPoolExecutor(max_workers=len(self.workers)) as executor:
             futures = [
                 executor.submit(
                     worker.client.call_server, function="build_images", images=images
@@ -127,7 +125,7 @@ class HeadServer(JsonRESTServer):
                 dockerfile_content
             )
 
-        with ThreadPoolExecutor() as executor:
+        with ThreadPoolExecutor(max_workers=len(healthy_worker_indices)) as executor:
             futures = [
                 executor.submit(
                     self.workers[i_healthy_worker].client.call_server,
@@ -177,7 +175,7 @@ class HeadServer(JsonRESTServer):
 
         self.running_containers = None
 
-        with ThreadPoolExecutor() as executor:
+        with ThreadPoolExecutor(max_workers=len(used_worker_indices)) as executor:
             futures = [
                 executor.submit(
                     self.workers[i].client.call_server,
