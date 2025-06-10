@@ -87,8 +87,6 @@ class ScalableDockerClient(AsyncJsonRESTClient):
         if self.is_error(response):
             raise ScalableDockerServerError(response)
 
-        print(f"{response=}")
-
         return [Container(**container) for container in response]
 
     async def start_destroying_containers(self) -> None:
