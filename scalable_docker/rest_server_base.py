@@ -1,9 +1,10 @@
+import waitress
 from threading import Lock
 from flask import Flask, request, jsonify
 from time import perf_counter
 import traceback
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 from collections.abc import Callable
 from typing import Any
 from beartype import beartype
@@ -18,9 +19,14 @@ class Timestamp:
 
 @beartype
 class JsonRESTServer(ABC):
-    def __init__(self, host: str, port: int) -> None:
+    def __init__(
+        self, host: str, port: int, threads: int = 256, connection_limit: int = 1000
+    ) -> None:
         self.host = host
         self.port = port
+        self.threads = threads
+        self.connection_limit = connection_limit
+
         self._call_timestamps = []
         self._call_timestamps_lock = Lock()
 
@@ -47,7 +53,14 @@ class JsonRESTServer(ABC):
                 response = [asdict(timestamp) for timestamp in self._call_timestamps]
             return response, 200
 
-        app.run(host=self.host, port=self.port, threaded=True)
+        # app.run(host=self.host, port=self.port, threaded=True)
+        waitress.serve(
+            app,
+            host=self.host,
+            port=self.port,
+            threads=self.threads,
+            connection_limit=self.connection_limit,
+        )
 
     def _get_response_or_error(self, arguments: Any) -> tuple[Any, int]:
         start_time = perf_counter()
