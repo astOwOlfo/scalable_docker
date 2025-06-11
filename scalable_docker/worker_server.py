@@ -126,10 +126,12 @@ class WorkerServer(JsonRESTServer):
             "up",
             "-d",
         ]
-        for dockerfile_content, count in Counter(dockerfile_contents).items():
+        for dockerfile_content in self.built_dockerfile_contents:
             image_name = self.image_name(dockerfile_content=dockerfile_content)
+            count = dockerfile_contents.count(dockerfile_content)
             docker_compose_up_command += ["--scale", f"{image_name}={count}"]
 
+        print("RUNNING:", docker_compose_up_command)
         run(docker_compose_up_command)
 
         containers: list[Container] = []
