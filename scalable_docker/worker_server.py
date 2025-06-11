@@ -65,7 +65,7 @@ class WorkerServer(JsonRESTServer):
             self.start_destroying_containers()
             self.wait_until_done_destroying_containers()
 
-        run(["docker", "system", "prune", "-a", "--volumes", "--force"])
+        # run(["docker", "system", "prune", "-a", "--volumes", "--force"])
         rmtree(self.working_directory, ignore_errors=True)
 
         docker_compose_yaml: dict[str, dict] = {"services": {}}
