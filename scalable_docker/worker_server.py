@@ -174,6 +174,10 @@ class WorkerServer(JsonRESTServer):
 
         stdout, stderr = self.destroy_sandboxes_process.communicate()
 
+        print("DOCKER COMPOSE DOWN FINISHED RUNNING")
+        print("DOCKER COMPOSE DOWN STDOUT:", stdout)
+        print("DOCKER COMPOSE DOWN STDERR:", stderr)
+
         assert self.destroy_sandboxes_process.returncode == 0, (
             f"Error trying to destroy sandboxes: docker compose down returned with a nonzero exit code.\nExit code: {self.destroy_sandboxes_process.returncode}\nStdout:{stdout}\nStderr:{stderr}"
         )

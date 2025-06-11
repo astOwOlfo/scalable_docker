@@ -51,7 +51,7 @@ class AsyncJsonRESTClient:
     def __init__(
         self,
         server_url: str,
-        max_retries: int = 4,
+        max_retries: int = 1,
         wait_before_retrying_seconds: int | float = 4,
     ) -> None:
         self.server_url = server_url
