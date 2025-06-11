@@ -1,20 +1,10 @@
 import waitress
-from threading import Lock
 from flask import Flask, request, jsonify
-from time import perf_counter
 import traceback
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, asdict
 from collections.abc import Callable
 from typing import Any
 from beartype import beartype
-
-
-@beartype
-@dataclass(frozen=True)
-class Timestamp:
-    start: float
-    end: float
 
 
 @beartype
@@ -26,9 +16,6 @@ class JsonRESTServer(ABC):
         self.port = port
         self.threads = threads
         self.connection_limit = connection_limit
-
-        self._call_timestamps = []
-        self._call_timestamps_lock = Lock()
 
     @abstractmethod
     def functions_exposed_through_api(self) -> dict[str, Callable]:
@@ -47,12 +34,6 @@ class JsonRESTServer(ABC):
 
             return jsonify(result), status_code
 
-        @app.route("/get_call_timestamps", methods=["GET"])
-        def get_call_timestamps():
-            with self._call_timestamps_lock:
-                response = [asdict(timestamp) for timestamp in self._call_timestamps]
-            return response, 200
-
         # app.run(host=self.host, port=self.port, threaded=True)
         waitress.serve(
             app,
@@ -63,17 +44,12 @@ class JsonRESTServer(ABC):
         )
 
     def _get_response_or_error(self, arguments: Any) -> tuple[Any, int]:
-        start_time = perf_counter()
         try:
             result = self.get_response(**arguments)
             status_code = 200
         except Exception as e:
             result = {"error": f"Uncaught exception:\n\n{e}\n{traceback.format_exc()}"}
             status_code = 400
-        end_time = perf_counter()
-
-        with self._call_timestamps_lock:
-            self._call_timestamps.append(Timestamp(start=start_time, end=end_time))
 
         try:
             return result, status_code
