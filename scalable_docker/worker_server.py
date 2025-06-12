@@ -1,5 +1,6 @@
 from hashlib import sha256
 from argparse import ArgumentParser
+import os
 from pathlib import Path
 from os import makedirs, path
 from shutil import rmtree
@@ -92,7 +93,11 @@ class WorkerServer(JsonRESTServer):
         with open(self.docker_compose_yaml_path, "w") as f:
             yaml.dump(docker_compose_yaml, f)
 
-        run(["docker", "compose", "-f", self.docker_compose_yaml_path, "build"])
+        env = os.environ.copy()
+        env["COMPOSE_BAKE"] = "true"
+        run(
+            ["docker", "compose", "-f", self.docker_compose_yaml_path, "build"], env=env
+        )
 
         self.built_dockerfile_contents = list(
             set(image["dockerfile_content"] for image in images)
