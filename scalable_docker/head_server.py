@@ -67,11 +67,17 @@ class HeadServer(JsonRESTServer):
             and "error" in worker_server_response.keys()
         )
 
-    def build_images(self, images: list[Image]) -> Any:
+    def build_images(
+        self, images: list[Image], prune: bool, batch_size: int | None
+    ) -> Any:
         with ThreadPoolExecutor(max_workers=len(self.workers)) as executor:
             futures = [
                 executor.submit(
-                    worker.client.call_server, function="build_images", images=images
+                    worker.client.call_server,
+                    function="build_images",
+                    images=images,
+                    prune=prune,
+                    batch_size=batch_size,
                 )
                 for worker in self.workers
             ]

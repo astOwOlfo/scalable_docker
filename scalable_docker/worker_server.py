@@ -1,13 +1,12 @@
 from hashlib import sha256
 from argparse import ArgumentParser
-import os
 from pathlib import Path
 from os import makedirs, path
 from shutil import rmtree
 import yaml
 from time import perf_counter
 from subprocess import run, PIPE, TimeoutExpired, Popen
-from collections import Counter
+from more_itertools import chunked
 from dataclasses import asdict
 from collections.abc import Callable, Iterable
 from typing import TypedDict
@@ -61,12 +60,16 @@ class WorkerServer(JsonRESTServer):
             "run_commands": self.run_commands,
         }
 
-    def build_images(self, images: list[Image]) -> None:
+    def build_images(
+        self, images: list[Image], prune: bool, batch_size: int | None
+    ) -> None:
         if self.running_containers is not None:
             self.start_destroying_containers()
             self.wait_until_done_destroying_containers()
 
-        # run(["docker", "system", "prune", "-a", "--volumes", "--force"])
+        if prune:
+            run(["docker", "system", "prune", "-a", "--volumes", "--force"], check=True)
+
         rmtree(self.working_directory, ignore_errors=True)
 
         docker_compose_yaml: dict[str, dict] = {"services": {}}
@@ -93,11 +96,21 @@ class WorkerServer(JsonRESTServer):
         with open(self.docker_compose_yaml_path, "w") as f:
             yaml.dump(docker_compose_yaml, f)
 
-        env = os.environ.copy()
-        env["COMPOSE_BAKE"] = "true"
-        run(
-            ["docker", "compose", "-f", self.docker_compose_yaml_path, "build"], env=env
+        image_names: list[str] = list(docker_compose_yaml["services"].keys())
+        batched_image_names: list[list[str]] = (
+            list(chunked(image_names, batch_size))
+            if batch_size is not None
+            else [image_names]
         )
+        for i, image_name_batch in enumerate(batched_image_names):
+            print(
+                f"BUILDING {len(image_name_batch)} IMAGES (BATCH {i + 1} OF {len(batched_image_names)})"
+            )
+            run(
+                ["docker", "compose", "-f", self.docker_compose_yaml_path, "build"]
+                + image_name_batch,
+                check=True,
+            )
 
         self.built_dockerfile_contents = list(
             set(image["dockerfile_content"] for image in images)
@@ -137,7 +150,7 @@ class WorkerServer(JsonRESTServer):
             docker_compose_up_command += ["--scale", f"{image_name}={count}"]
 
         print("RUNNING:", docker_compose_up_command)
-        run(docker_compose_up_command)
+        run(docker_compose_up_command, check=True)
 
         containers: list[Container] = []
         for i, dockerfile_content in enumerate(dockerfile_contents):
