@@ -72,7 +72,12 @@ class WorkerServer(JsonRESTServer):
             self.wait_until_done_destroying_containers()
 
         if prune:
-            run(["docker", "system", "prune", "-a", "--volumes", "--force"], check=True)
+            run(
+                ["docker", "system", "prune", "-a", "--volumes", "--force"],
+                capture_output=True,
+                errors="replace",
+                check=True,
+            )
 
         rmtree(self.working_directory, ignore_errors=True)
 
@@ -122,6 +127,8 @@ class WorkerServer(JsonRESTServer):
                             "build",
                         ]
                         + image_name_batch,
+                        capture_output=True,
+                        errors="replace",
                         check=True,
                     )
                     break
@@ -170,7 +177,7 @@ class WorkerServer(JsonRESTServer):
             docker_compose_up_command += ["--scale", f"{image_name}={count}"]
 
         print("RUNNING:", docker_compose_up_command)
-        run(docker_compose_up_command, check=True)
+        run(docker_compose_up_command, capture_output=True, errors="check", check=True)
 
         containers: list[Container] = []
         for i, dockerfile_content in enumerate(dockerfile_contents):
