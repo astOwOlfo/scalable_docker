@@ -68,7 +68,11 @@ class HeadServer(JsonRESTServer):
         )
 
     def build_images(
-        self, images: list[Image], prune: bool, batch_size: int | None
+        self,
+        images: list[Image],
+        prune: bool,
+        batch_size: int | None,
+        max_attempts: int,
     ) -> Any:
         with ThreadPoolExecutor(max_workers=len(self.workers)) as executor:
             futures = [
@@ -78,6 +82,7 @@ class HeadServer(JsonRESTServer):
                     images=images,
                     prune=prune,
                     batch_size=batch_size,
+                    max_attempts=max_attempts,
                 )
                 for worker in self.workers
             ]

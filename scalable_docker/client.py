@@ -64,13 +64,18 @@ class ScalableDockerClient(AsyncJsonRESTClient):
         return isinstance(server_response, dict) and "error" in server_response.keys()
 
     async def build_images(
-        self, images: list[Image], prune: bool = False, batch_size: int | None = None
+        self,
+        images: list[Image],
+        prune: bool = False,
+        batch_size: int | None = None,
+        max_attempts: int = 1,
     ) -> None:
         response = await self.call_server(
             function="build_images",
             images=[asdict(image) for image in images],
             prune=prune,
             batch_size=batch_size,
+            max_attempts=max_attempts,
         )
 
         if self.is_error(response):

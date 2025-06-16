@@ -61,7 +61,11 @@ class WorkerServer(JsonRESTServer):
         }
 
     def build_images(
-        self, images: list[Image], prune: bool, batch_size: int | None
+        self,
+        images: list[Image],
+        prune: bool,
+        batch_size: int | None,
+        max_attempts: int,
     ) -> None:
         if self.running_containers is not None:
             self.start_destroying_containers()
@@ -106,11 +110,27 @@ class WorkerServer(JsonRESTServer):
             print(
                 f"BUILDING {len(image_name_batch)} IMAGES (BATCH {i + 1} OF {len(batched_image_names)})"
             )
-            run(
-                ["docker", "compose", "-f", self.docker_compose_yaml_path, "build"]
-                + image_name_batch,
-                check=True,
-            )
+            for i_attempt in range(max_attempts):
+                print(f"ATTMEPT {i_attempt} OUT OF {max_attempts}")
+                try:
+                    run(
+                        [
+                            "docker",
+                            "compose",
+                            "-f",
+                            self.docker_compose_yaml_path,
+                            "build",
+                        ]
+                        + image_name_batch,
+                        check=True,
+                    )
+                    break
+                except Exception as e:
+                    print(
+                        "DOCKER COMPOSE BUILD FAILED WITH THE FOLLOWING EXCEPTION:", e
+                    )
+                    if i_attempt == max_attempts - 1:
+                        raise e
 
         self.built_dockerfile_contents = list(
             set(image["dockerfile_content"] for image in images)
