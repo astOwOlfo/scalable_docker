@@ -306,7 +306,7 @@ class WorkerServer(JsonRESTServer):
 
 @beartype
 def run_and_raise_if_fails(command: list[str]) -> None:
-    output = run(command, capture_output=True, check=True)
+    output = run(command, capture_output=True)
     if output.returncode is not None:
         raise ValueError(
             f"Command {command} failed with non-zero exit code {output.returncode}.\n\nSTDOUT: {output.stdout}\n\nSTDERR:{output.stderr}"
