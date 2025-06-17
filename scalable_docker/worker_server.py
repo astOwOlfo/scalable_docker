@@ -72,11 +72,8 @@ class WorkerServer(JsonRESTServer):
             self.wait_until_done_destroying_containers()
 
         if prune:
-            run(
-                ["docker", "system", "prune", "-a", "--volumes", "--force"],
-                capture_output=True,
-                errors="replace",
-                check=True,
+            run_and_raise_if_fails(
+                ["docker", "system", "prune", "-a", "--volumes", "--force"]
             )
 
         rmtree(self.working_directory, ignore_errors=True)
@@ -118,7 +115,7 @@ class WorkerServer(JsonRESTServer):
             for i_attempt in range(max_attempts):
                 print(f"ATTMEPT {i_attempt} OUT OF {max_attempts}")
                 try:
-                    run(
+                    run_and_raise_if_fails(
                         [
                             "docker",
                             "compose",
@@ -126,10 +123,7 @@ class WorkerServer(JsonRESTServer):
                             self.docker_compose_yaml_path,
                             "build",
                         ]
-                        + image_name_batch,
-                        capture_output=True,
-                        errors="replace",
-                        check=True,
+                        + image_name_batch
                     )
                     break
                 except Exception as e:
@@ -176,8 +170,7 @@ class WorkerServer(JsonRESTServer):
             count = dockerfile_contents.count(dockerfile_content)
             docker_compose_up_command += ["--scale", f"{image_name}={count}"]
 
-        print("RUNNING:", docker_compose_up_command)
-        run(docker_compose_up_command, capture_output=True, errors="check", check=True)
+        run_and_raise_if_fails(docker_compose_up_command)
 
         containers: list[Container] = []
         for i, dockerfile_content in enumerate(dockerfile_contents):
@@ -309,6 +302,15 @@ class WorkerServer(JsonRESTServer):
             outputs.append(output)
 
         return [asdict(output) for output in outputs]
+
+
+@beartype
+def run_and_raise_if_fails(command: list[str]) -> None:
+    output = run(command, capture_output=True, check=True)
+    if output.returncode is not None:
+        raise ValueError(
+            f"Command {command} failed with non-zero exit code {output.returncode}.\n\nSTDOUT: {output.stdout}\n\nSTDERR:{output.stderr}"
+        )
 
 
 @beartype
