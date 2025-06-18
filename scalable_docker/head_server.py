@@ -55,6 +55,7 @@ class HeadServer(JsonRESTServer):
     def functions_exposed_through_api(self) -> dict[str, Callable]:
         return {
             "build_images": self.build_images,
+            "push_built_images_to_docker_hub": self.push_built_images_to_docker_hub,
             "number_healthy_workers": self.number_healthy_workers,
             "start_containers": self.start_containers,
             "start_destroying_containers": self.start_destroying_containers,
