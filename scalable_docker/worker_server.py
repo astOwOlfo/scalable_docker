@@ -345,7 +345,7 @@ class WorkerServer(JsonRESTServer):
 
 
 @beartype
-def run_and_raise_if_fails(command: list[str] | str, shell=True) -> None:
+def run_and_raise_if_fails(command: list[str] | str, shell: bool = False) -> None:
     assert isinstance(command, str) == shell
 
     output = run(command, capture_output=True, shell=shell)
