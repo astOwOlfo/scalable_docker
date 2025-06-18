@@ -80,6 +80,8 @@ class HeadServer(JsonRESTServer):
         docker_hub_username: str | None,
         only_for_pushing: bool,
     ) -> Any:
+        assert len(images) > 0
+
         images_by_worker: list[list[Image]]
         if only_for_pushing:
             images_by_worker = random_partition(images, n_partitions=len(self.workers))
@@ -101,6 +103,7 @@ class HeadServer(JsonRESTServer):
                 for worker, images_for_worker in zip(
                     self.workers, images_by_worker, strict=True
                 )
+                if len(images_for_worker) > 0
             ]
             responses = [future.result() for future in futures]
 
