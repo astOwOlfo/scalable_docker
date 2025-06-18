@@ -93,13 +93,13 @@ class WorkerServer(JsonRESTServer):
             makedirs(image_directory)
             with open(path.join(image_directory, "Dockerfile"), "w") as f:
                 if pull_from_docker_hub:
-                    f.write(image["dockerfile_content"])
-                else:
                     tagged_image_name = self.tagged_image_name(
                         dockerfile_content=image["dockerfile_content"],
                         docker_hub_username=docker_hub_username,  # type: ignore
                     )
                     f.write(f"FROM {tagged_image_name}")
+                else:
+                    f.write(image["dockerfile_content"])
             docker_compose_yaml["services"][image_name] = {
                 "build": image_directory,
                 "command": "tail -f /dev/null",
