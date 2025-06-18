@@ -69,6 +69,8 @@ class ScalableDockerClient(AsyncJsonRESTClient):
         prune: bool = False,
         batch_size: int | None = None,
         max_attempts: int = 1,
+        pull_from_docker_hub: bool = False,
+        docker_hub_username: str | None = None,
     ) -> None:
         response = await self.call_server(
             function="build_images",
@@ -76,6 +78,8 @@ class ScalableDockerClient(AsyncJsonRESTClient):
             prune=prune,
             batch_size=batch_size,
             max_attempts=max_attempts,
+            pull_from_docker_hub=pull_from_docker_hub,
+            docker_hub_username=docker_hub_username,
         )
 
         if self.is_error(response):

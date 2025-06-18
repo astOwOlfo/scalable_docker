@@ -74,6 +74,8 @@ class HeadServer(JsonRESTServer):
         prune: bool,
         batch_size: int | None,
         max_attempts: int,
+        pull_from_docker_hub: bool,
+        docker_hub_username: str | None,
     ) -> Any:
         with ThreadPoolExecutor(max_workers=len(self.workers)) as executor:
             futures = [
@@ -84,6 +86,8 @@ class HeadServer(JsonRESTServer):
                     prune=prune,
                     batch_size=batch_size,
                     max_attempts=max_attempts,
+                    pull_from_docker_hub=pull_from_docker_hub,
+                    docker_hub_username=docker_hub_username,
                 )
                 for worker in self.workers
             ]

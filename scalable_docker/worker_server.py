@@ -68,7 +68,11 @@ class WorkerServer(JsonRESTServer):
         prune: bool,
         batch_size: int | None,
         max_attempts: int,
+        pull_from_docker_hub: bool,
+        docker_hub_username: str | None,
     ) -> None:
+        assert (docker_hub_username is not None) == pull_from_docker_hub
+
         if self.running_containers is not None:
             self.start_destroying_containers()
             self.wait_until_done_destroying_containers()
@@ -87,7 +91,14 @@ class WorkerServer(JsonRESTServer):
             rmtree(image_directory, ignore_errors=True)
             makedirs(image_directory)
             with open(path.join(image_directory, "Dockerfile"), "w") as f:
-                f.write(image["dockerfile_content"])
+                if pull_from_docker_hub:
+                    f.write(image["dockerfile_content"])
+                else:
+                    tagged_image_name = self.tagged_image_name(
+                        dockerfile_content=image["dockerfile_content"],
+                        docker_hub_username=docker_hub_username,  # type: ignore
+                    )
+                    f.write(f"FROM {tagged_image_name}")
             docker_compose_yaml["services"][image_name] = {
                 "build": image_directory,
                 "command": "tail -f /dev/null",
