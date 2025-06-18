@@ -4,6 +4,7 @@ from pathlib import Path
 from os import makedirs, path
 from shutil import rmtree
 import yaml
+from tqdm import tqdm
 from time import perf_counter
 from subprocess import run, PIPE, TimeoutExpired, Popen
 from more_itertools import chunked
@@ -137,8 +138,27 @@ class WorkerServer(JsonRESTServer):
             set(image["dockerfile_content"] for image in images)
         )
 
+    def push_built_images_to_docker_hub(self, docker_hub_username: str) -> None:
+        for dockerfile_content in tqdm(
+            self.built_dockerfile_contents, desc="pushing to docker hub"
+        ):
+            image_name = "scalable_docker-" + self.image_name(
+                dockerfile_content=dockerfile_content
+            )
+            tagged_image_name = self.tagged_image_name(
+                dockerfile_content=dockerfile_content,
+                docker_hub_username=docker_hub_username,
+            )
+            run_and_raise_if_fails(["docker", "tag", image_name, tagged_image_name])
+            run_and_raise_if_fails(["docker", "push", tagged_image_name])
+
     def image_name(self, dockerfile_content: str) -> str:
         return sha256(dockerfile_content.encode()).hexdigest()
+
+    def tagged_image_name(
+        self, dockerfile_content: str, docker_hub_username: str
+    ) -> str:
+        return f"{docker_hub_username}/scalable_docker-{self.image_name(dockerfile_content=dockerfile_content)}"
 
     def start_containers(self, dockerfile_contents: list[str]) -> list[Container]:
         assert self.built_dockerfile_contents is not None, (

@@ -81,6 +81,15 @@ class ScalableDockerClient(AsyncJsonRESTClient):
         if self.is_error(response):
             raise ScalableDockerServerError(response)
 
+    async def push_built_images_to_docker_hub(self, docker_hub_username: str) -> None:
+        response = await self.call_server(
+            function="push_built_images_to_docker_hub",
+            docker_hub_username=docker_hub_username,
+        )
+
+        if self.is_error(response):
+            raise ScalableDockerServerError(response)
+
     async def number_healthy_workers(self) -> int:
         response = await self.call_server(function="number_healthy_workers")
 
