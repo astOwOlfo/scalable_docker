@@ -2,6 +2,7 @@ from hashlib import sha256
 from argparse import ArgumentParser
 from pathlib import Path
 from os import makedirs, path
+from shlex import quote
 from shutil import rmtree
 import yaml
 from tqdm import tqdm
@@ -150,7 +151,14 @@ class WorkerServer(JsonRESTServer):
             set(image["dockerfile_content"] for image in images)
         )
 
-    def push_built_images_to_docker_hub(self, docker_hub_username: str) -> None:
+    def push_built_images_to_docker_hub(
+        self, docker_hub_username: str, docker_hub_access_token: str
+    ) -> None:
+        run_and_raise_if_fails(
+            f"echo {quote(docker_hub_access_token)} | docker login --username {quote(docker_hub_username)} --password-stdin",
+            shell=True,
+        )
+
         for dockerfile_content in tqdm(
             self.built_dockerfile_contents, desc="pushing to docker hub"
         ):
@@ -337,8 +345,11 @@ class WorkerServer(JsonRESTServer):
 
 
 @beartype
-def run_and_raise_if_fails(command: list[str]) -> None:
-    output = run(command, capture_output=True)
+def run_and_raise_if_fails(command: list[str] | str, shell=True) -> None:
+    assert isinstance(command, str) == shell
+
+    output = run(command, capture_output=True, shell=shell)
+
     if output.returncode != 0:
         raise ValueError(
             f"Command {command} failed with non-zero exit code {output.returncode}.\n\nSTDOUT: {output.stdout}\n\nSTDERR:{output.stderr}"

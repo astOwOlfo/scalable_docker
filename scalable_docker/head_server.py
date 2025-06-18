@@ -106,13 +106,14 @@ class HeadServer(JsonRESTServer):
                 "error": f"{len(unsuccessful_responses)} out of {len(self.workers)} failed when trying to build images. All the responses from the workers which failed are: {unsuccessful_responses}"
             }
 
-    def push_built_images_to_docker_hub(self, docker_hub_username: str) -> Any:
+    def push_built_images_to_docker_hub(self, docker_hub_username: str, docker_hub_access_token: str) -> Any:
         with ThreadPoolExecutor(max_workers=len(self.workers)) as executor:
             futures = [
                 executor.submit(
                     worker.client.call_server,
                     function="push_built_images_to_docker_hub",
                     docker_hub_username=docker_hub_username,
+                    docker_hub_access_token=docker_hub_access_token,
                 )
                 for worker in self.workers
             ]
