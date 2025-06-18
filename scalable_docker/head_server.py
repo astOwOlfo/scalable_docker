@@ -280,7 +280,7 @@ class HeadServer(JsonRESTServer):
 def random_partition(xs: list, n_partitions: int) -> list[list]:
     xs = xs.copy()
     random.shuffle(xs)
-    cutoff_indices = [float(i / n_partitions) for i in range(n_partitions + 1)]
+    cutoff_indices = [i // n_partitions for i in range(n_partitions + 1)]
     return [xs[i:j] for i, j in pairwise(cutoff_indices)]
 
 
