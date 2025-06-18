@@ -124,10 +124,10 @@ class WorkerServer(JsonRESTServer):
         )
         for i, image_name_batch in enumerate(batched_image_names):
             print(
-                f"BUILDING {len(image_name_batch)} IMAGES (BATCH {i + 1} OF {len(batched_image_names)})"
+                f"BUILDING {len(image_name_batch)} IMAGES (BATCH {i + 1} OF {len(batched_image_names)})", flush=True
             )
             for i_attempt in range(max_attempts):
-                print(f"ATTMEPT {i_attempt} OUT OF {max_attempts}")
+                print(f"ATTMEPT {i_attempt} OUT OF {max_attempts}", flush=True)
                 try:
                     run_and_raise_if_fails(
                         [
@@ -142,7 +142,7 @@ class WorkerServer(JsonRESTServer):
                     break
                 except Exception as e:
                     print(
-                        "DOCKER COMPOSE BUILD FAILED WITH THE FOLLOWING EXCEPTION:", e
+                        "DOCKER COMPOSE BUILD FAILED WITH THE FOLLOWING EXCEPTION:", e, flush=True
                     )
                     if i_attempt == max_attempts - 1:
                         raise e
@@ -256,9 +256,9 @@ class WorkerServer(JsonRESTServer):
 
         stdout, stderr = self.destroy_sandboxes_process.communicate()
 
-        print("DOCKER COMPOSE DOWN FINISHED RUNNING")
-        print("DOCKER COMPOSE DOWN STDOUT:", stdout)
-        print("DOCKER COMPOSE DOWN STDERR:", stderr)
+        print("DOCKER COMPOSE DOWN FINISHED RUNNING", flush=True)
+        print("DOCKER COMPOSE DOWN STDOUT:", stdout, flush=True)
+        print("DOCKER COMPOSE DOWN STDERR:", stderr, flush=True)
 
         assert self.destroy_sandboxes_process.returncode == 0, (
             f"Error trying to destroy sandboxes: docker compose down returned with a nonzero exit code.\nExit code: {self.destroy_sandboxes_process.returncode}\nStdout:{stdout}\nStderr:{stderr}"
