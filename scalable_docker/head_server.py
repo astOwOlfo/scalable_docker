@@ -1,6 +1,8 @@
 from argparse import ArgumentParser
 from concurrent.futures import ThreadPoolExecutor
+import random
 from time import perf_counter
+from more_itertools import pairwise
 from collections.abc import Callable
 from typing import Any, TypedDict
 from beartype import beartype
@@ -76,20 +78,29 @@ class HeadServer(JsonRESTServer):
         max_attempts: int,
         pull_from_docker_hub: bool,
         docker_hub_username: str | None,
+        only_for_pushing: bool,
     ) -> Any:
+        images_by_worker: list[list[Image]]
+        if only_for_pushing:
+            images_by_worker = random_partition(images, n_partitions=len(self.workers))
+        else:
+            images_by_worker = [images] * len(self.workers)
+
         with ThreadPoolExecutor(max_workers=len(self.workers)) as executor:
             futures = [
                 executor.submit(
                     worker.client.call_server,
                     function="build_images",
-                    images=images,
+                    images=images_for_worker,
                     prune=prune,
                     batch_size=batch_size,
                     max_attempts=max_attempts,
                     pull_from_docker_hub=pull_from_docker_hub,
                     docker_hub_username=docker_hub_username,
                 )
-                for worker in self.workers
+                for worker, images_for_worker in zip(
+                    self.workers, images_by_worker, strict=True
+                )
             ]
             responses = [future.result() for future in futures]
 
@@ -106,7 +117,9 @@ class HeadServer(JsonRESTServer):
                 "error": f"{len(unsuccessful_responses)} out of {len(self.workers)} failed when trying to build images. All the responses from the workers which failed are: {unsuccessful_responses}"
             }
 
-    def push_built_images_to_docker_hub(self, docker_hub_username: str, docker_hub_access_token: str) -> Any:
+    def push_built_images_to_docker_hub(
+        self, docker_hub_username: str, docker_hub_access_token: str
+    ) -> Any:
         with ThreadPoolExecutor(max_workers=len(self.workers)) as executor:
             futures = [
                 executor.submit(
@@ -261,6 +274,14 @@ class HeadServer(JsonRESTServer):
             worker.last_error_time = perf_counter()
 
         return response
+
+
+@beartype
+def random_partition(xs: list, n_partitions: int) -> list[list]:
+    xs = xs.copy()
+    random.shuffle(xs)
+    cutoff_indices = [float(i / n_partitions) for i in range(n_partitions + 1)]
+    return [xs[i:j] for i, j in pairwise(cutoff_indices)]
 
 
 @beartype
