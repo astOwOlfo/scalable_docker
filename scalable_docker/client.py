@@ -73,6 +73,8 @@ class ScalableDockerClient(AsyncJsonRESTClient):
         docker_hub_username: str | None = None,
         only_for_pushing: bool = False,
     ) -> None:
+        print(f"Building {len(images)} images...")
+
         response = await self.call_server(
             function="build_images",
             images=[asdict(image) for image in images],
@@ -87,7 +89,11 @@ class ScalableDockerClient(AsyncJsonRESTClient):
         if self.is_error(response):
             raise ScalableDockerServerError(response)
 
+        print("Done building images!")
+
     async def push_built_images_to_docker_hub(self, docker_hub_username: str) -> None:
+        print("Pushing images...")
+
         response = await self.call_server(
             function="push_built_images_to_docker_hub",
             docker_hub_username=docker_hub_username,
@@ -96,6 +102,8 @@ class ScalableDockerClient(AsyncJsonRESTClient):
 
         if self.is_error(response):
             raise ScalableDockerServerError(response)
+
+        print("Done pushing images!")
 
     # def get_docker_hub_access_token(self) -> str:
     #     token = os.environ.get("DOCKER_HUB_ACCESS_TOKEN")
