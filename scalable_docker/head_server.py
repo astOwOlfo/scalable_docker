@@ -118,7 +118,8 @@ class HeadServer(JsonRESTServer):
             }
 
     def push_built_images_to_docker_hub(
-        self, docker_hub_username: str, docker_hub_access_token: str
+        self, docker_hub_username: str,
+        # docker_hub_access_token: str,
     ) -> Any:
         with ThreadPoolExecutor(max_workers=len(self.workers)) as executor:
             futures = [
@@ -126,7 +127,7 @@ class HeadServer(JsonRESTServer):
                     worker.client.call_server,
                     function="push_built_images_to_docker_hub",
                     docker_hub_username=docker_hub_username,
-                    docker_hub_access_token=docker_hub_access_token,
+                    # docker_hub_access_token=docker_hub_access_token,
                 )
                 for worker in self.workers
             ]

@@ -152,12 +152,14 @@ class WorkerServer(JsonRESTServer):
         )
 
     def push_built_images_to_docker_hub(
-        self, docker_hub_username: str, docker_hub_access_token: str
+        self,
+        docker_hub_username: str,
+        # docker_hub_access_token: str,
     ) -> None:
-        run_and_raise_if_fails(
-            f"echo {quote(docker_hub_access_token)} | docker login --username {quote(docker_hub_username)} --password-stdin",
-            shell=True,
-        )
+        # run_and_raise_if_fails(
+        #     f"echo {quote(docker_hub_access_token)} | docker login --username {quote(docker_hub_username)} --password-stdin",
+        #     shell=True,
+        # )
 
         for dockerfile_content in tqdm(
             self.built_dockerfile_contents, desc="pushing to docker hub"

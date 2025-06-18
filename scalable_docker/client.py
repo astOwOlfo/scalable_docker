@@ -91,21 +91,21 @@ class ScalableDockerClient(AsyncJsonRESTClient):
         response = await self.call_server(
             function="push_built_images_to_docker_hub",
             docker_hub_username=docker_hub_username,
-            docker_hub_access_token=self.get_docker_hub_access_token(),
+            # docker_hub_access_token=self.get_docker_hub_access_token(),
         )
 
         if self.is_error(response):
             raise ScalableDockerServerError(response)
 
-    def get_docker_hub_access_token(self) -> str:
-        token = os.environ.get("DOCKER_HUB_ACCESS_TOKEN")
-
-        if token is None:
-            raise ValueError(
-                "Please provide a Docker Hub access token by setting the DOCKER_HUB_ACCESS_TOKEN environment variable."
-            )
-
-        return token
+    # def get_docker_hub_access_token(self) -> str:
+    #     token = os.environ.get("DOCKER_HUB_ACCESS_TOKEN")
+    # 
+    #     if token is None:
+    #         raise ValueError(
+    #             "Please provide a Docker Hub access token by setting the DOCKER_HUB_ACCESS_TOKEN environment variable."
+    #         )
+    # 
+    #     return token
 
     async def number_healthy_workers(self) -> int:
         response = await self.call_server(function="number_healthy_workers")
