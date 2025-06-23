@@ -146,6 +146,7 @@ class WorkerServer(JsonRESTServer):
                     )
                     if i_attempt == max_attempts - 1:
                         raise e
+            print("BUILT!", flush=True)
 
         self.built_dockerfile_contents = list(
             set(image["dockerfile_content"] for image in images)
