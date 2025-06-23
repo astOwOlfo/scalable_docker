@@ -63,57 +63,37 @@ class ScalableDockerClient(AsyncJsonRESTClient):
     def is_error(self, server_response: Any) -> bool:
         return isinstance(server_response, dict) and "error" in server_response.keys()
 
+    async def docker_prune_everything(self) -> Any:
+        print("Pruning docker images...")
+
+        response = await self.call_server(function="docker_prune_everything")
+
+        if self.is_error(response):
+            raise ScalableDockerServerError(response)
+
+        print("Done pruning!")
+
     async def build_images(
         self,
+        key: str,
         images: list[Image],
-        prune: bool = False,
         batch_size: int | None = None,
         max_attempts: int = 1,
-        pull_from_docker_hub: bool = False,
-        docker_hub_username: str | None = None,
-        only_for_pushing: bool = False,
     ) -> None:
         print(f"Building {len(images)} images...")
 
         response = await self.call_server(
             function="build_images",
+            key=key,
             images=[asdict(image) for image in images],
-            prune=prune,
             batch_size=batch_size,
             max_attempts=max_attempts,
-            pull_from_docker_hub=pull_from_docker_hub,
-            docker_hub_username=docker_hub_username,
-            only_for_pushing=only_for_pushing,
         )
 
         if self.is_error(response):
             raise ScalableDockerServerError(response)
 
         print("Done building images!")
-
-    async def push_built_images_to_docker_hub(self, docker_hub_username: str) -> None:
-        print("Pushing images...")
-
-        response = await self.call_server(
-            function="push_built_images_to_docker_hub",
-            docker_hub_username=docker_hub_username,
-            # docker_hub_access_token=self.get_docker_hub_access_token(),
-        )
-
-        if self.is_error(response):
-            raise ScalableDockerServerError(response)
-
-        print("Done pushing images!")
-
-    # def get_docker_hub_access_token(self) -> str:
-    #     token = os.environ.get("DOCKER_HUB_ACCESS_TOKEN")
-    # 
-    #     if token is None:
-    #         raise ValueError(
-    #             "Please provide a Docker Hub access token by setting the DOCKER_HUB_ACCESS_TOKEN environment variable."
-    #         )
-    # 
-    #     return token
 
     async def number_healthy_workers(self) -> int:
         response = await self.call_server(function="number_healthy_workers")
@@ -123,9 +103,13 @@ class ScalableDockerClient(AsyncJsonRESTClient):
 
         return response
 
-    async def start_containers(self, dockerfile_contents: list[str]) -> list[Container]:
+    async def start_containers(
+        self, key: str, dockerfile_contents: list[str]
+    ) -> list[Container]:
         response = await self.call_server(
-            function="start_containers", dockerfile_contents=dockerfile_contents
+            function="start_containers",
+            key=key,
+            dockerfile_contents=dockerfile_contents,
         )
 
         if self.is_error(response):
@@ -133,20 +117,24 @@ class ScalableDockerClient(AsyncJsonRESTClient):
 
         return [Container(**container) for container in response]
 
-    async def start_destroying_containers(self) -> None:
-        response = await self.call_server(function="start_destroying_containers")
+    async def start_destroying_containers(self, key: str) -> None:
+        response = await self.call_server(
+            key=key, function="start_destroying_containers"
+        )
 
         if self.is_error(response):
             raise ScalableDockerServerError(response)
 
     async def run_commands(
         self,
+        key: str,
         container: Container,
         commands: list[str],
         timeout: MultiCommandTimeout,
     ) -> list[ProcessOutput]:
         response = await self.call_server(
             function="run_commands",
+            key=key,
             container=asdict(container),
             commands=commands,
             total_timeout_seconds=timeout.seconds_per_command,

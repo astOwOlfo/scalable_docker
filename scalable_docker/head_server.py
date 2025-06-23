@@ -37,7 +37,7 @@ class Worker:
 @beartype
 class HeadServer(JsonRESTServer):
     workers: list[Worker]
-    running_containers: list[Container] | None = None
+    running_containers: dict[str, list[Container]]
     delay_before_retrying_worker_after_error_seconds: float | int
 
     def __init__(
@@ -49,15 +49,15 @@ class HeadServer(JsonRESTServer):
     ) -> None:
         super().__init__(host=host, port=port)
         self.workers = [Worker(url) for url in worker_urls]
-        self.running_containers = None
+        self.running_containers = {}
         self.delay_before_retrying_worker_after_error_seconds = (
             delay_before_retrying_worker_after_error_seconds
         )
 
     def functions_exposed_through_api(self) -> dict[str, Callable]:
         return {
+            "docker_prune_everything": self.docker_prune_everything,
             "build_images": self.build_images,
-            "push_built_images_to_docker_hub": self.push_built_images_to_docker_hub,
             "number_healthy_workers": self.number_healthy_workers,
             "start_containers": self.start_containers,
             "start_destroying_containers": self.start_destroying_containers,
@@ -70,67 +70,11 @@ class HeadServer(JsonRESTServer):
             and "error" in worker_server_response.keys()
         )
 
-    def build_images(
-        self,
-        images: list[Image],
-        prune: bool,
-        batch_size: int | None,
-        max_attempts: int,
-        pull_from_docker_hub: bool,
-        docker_hub_username: str | None,
-        only_for_pushing: bool,
-    ) -> Any:
-        assert len(images) > 0
-
-        images_by_worker: list[list[Image]]
-        if only_for_pushing:
-            images_by_worker = random_partition(images, n_partitions=len(self.workers))
-        else:
-            images_by_worker = [images] * len(self.workers)
-
+    def docker_prune_everything(self) -> Any:
         with ThreadPoolExecutor(max_workers=len(self.workers)) as executor:
             futures = [
                 executor.submit(
-                    worker.client.call_server,
-                    function="build_images",
-                    images=images_for_worker,
-                    prune=prune,
-                    batch_size=batch_size,
-                    max_attempts=max_attempts,
-                    pull_from_docker_hub=pull_from_docker_hub,
-                    docker_hub_username=docker_hub_username,
-                )
-                for worker, images_for_worker in zip(
-                    self.workers, images_by_worker, strict=True
-                )
-                if len(images_for_worker) > 0
-            ]
-            responses = [future.result() for future in futures]
-
-        unsuccessful_responses: list[dict] = []
-        for worker, response in zip(self.workers, responses, strict=True):
-            if self.is_error(response):
-                worker.last_error_time = perf_counter()
-                unsuccessful_responses.append(response)
-            else:
-                worker.last_error_time = None
-
-        if len(unsuccessful_responses) > 0:
-            return {
-                "error": f"{len(unsuccessful_responses)} out of {len(self.workers)} failed when trying to build images. All the responses from the workers which failed are: {unsuccessful_responses}"
-            }
-
-    def push_built_images_to_docker_hub(
-        self, docker_hub_username: str,
-        # docker_hub_access_token: str,
-    ) -> Any:
-        with ThreadPoolExecutor(max_workers=len(self.workers)) as executor:
-            futures = [
-                executor.submit(
-                    worker.client.call_server,
-                    function="push_built_images_to_docker_hub",
-                    docker_hub_username=docker_hub_username,
-                    # docker_hub_access_token=docker_hub_access_token,
+                    worker.client.call_server, function="docker_prune_everything"
                 )
                 for worker in self.workers
             ]
@@ -146,7 +90,43 @@ class HeadServer(JsonRESTServer):
 
         if len(unsuccessful_responses) > 0:
             return {
-                "error": f"{len(unsuccessful_responses)} out of {len(self.workers)} failed when trying to build images. All the responses from the workers which failed are: {unsuccessful_responses}"
+                "error": f"{len(unsuccessful_responses)} out of {len(self.workers)} failed when trying to prune all docker images. All the responses from the workers which failed are: {unsuccessful_responses}"
+            }
+
+    def build_images(
+        self,
+        key: str,
+        images: list[Image],
+        batch_size: int | None,
+        max_attempts: int,
+    ) -> Any:
+        assert len(images) > 0
+
+        with ThreadPoolExecutor(max_workers=len(self.workers)) as executor:
+            futures = [
+                executor.submit(
+                    worker.client.call_server,
+                    function="build_images",
+                    key=key,
+                    images=images,
+                    batch_size=batch_size,
+                    max_attempts=max_attempts,
+                )
+                for worker in self.workers
+            ]
+            responses = [future.result() for future in futures]
+
+        unsuccessful_responses: list[dict] = []
+        for worker, response in zip(self.workers, responses, strict=True):
+            if self.is_error(response):
+                worker.last_error_time = perf_counter()
+                unsuccessful_responses.append(response)
+            else:
+                worker.last_error_time = None
+
+        if len(unsuccessful_responses) > 0:
+            return {
+                "error": f"{key=}: {len(unsuccessful_responses)} out of {len(self.workers)} failed when trying to build images. All the responses from the workers which failed are: {unsuccessful_responses}"
             }
 
     def healthy_worker_indices(self) -> list[int]:
@@ -162,10 +142,10 @@ class HeadServer(JsonRESTServer):
         return len(self.healthy_worker_indices())
 
     def start_containers(
-        self, dockerfile_contents: list[str]
+        self, key: str, dockerfile_contents: list[str]
     ) -> list[Container] | dict:
-        if self.running_containers is not None:
-            self.start_destroying_containers()
+        if key in self.running_containers.keys():
+            self.start_destroying_containers(key=key)
 
         healthy_worker_indices = self.healthy_worker_indices()
 
@@ -189,6 +169,7 @@ class HeadServer(JsonRESTServer):
                 executor.submit(
                     self.workers[i_healthy_worker].client.call_server,
                     function="start_containers",
+                    key=key,
                     dockerfile_contents=dockerfile_contents_for_worker,
                 )
                 for i_healthy_worker, dockerfile_contents_for_worker in zip(
@@ -220,24 +201,25 @@ class HeadServer(JsonRESTServer):
 
         assert all(container is not None for container in containers)
 
-        self.running_containers = containers  # type: ignore
+        self.running_containers[key] = containers  # type: ignore
 
         return containers  # type: ignore
 
-    def start_destroying_containers(self) -> Any:
-        if self.running_containers is None:
+    def start_destroying_containers(self, key: str) -> Any:
+        if key not in self.running_containers.keys():
             return
 
         used_worker_indices = set(
-            container["worker_index"] for container in self.running_containers
+            container["worker_index"] for container in self.running_containers[key]
         )
 
-        self.running_containers = None
+        del self.running_containers[key]
 
         with ThreadPoolExecutor(max_workers=len(used_worker_indices)) as executor:
             futures = [
                 executor.submit(
                     self.workers[i].client.call_server,
+                    key=key,
                     function="start_destroying_containers",
                 )
                 for i in used_worker_indices
@@ -256,6 +238,7 @@ class HeadServer(JsonRESTServer):
 
     def run_commands(
         self,
+        key: str,
         container: Container,
         commands: list[str],
         total_timeout_seconds: float | int,
@@ -265,6 +248,7 @@ class HeadServer(JsonRESTServer):
 
         response = worker.client.call_server(
             function="run_commands",
+            key=key,
             container={
                 "dockerfile_content": container["dockerfile_content"],
                 "index": container["index"],

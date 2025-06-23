@@ -2,10 +2,8 @@ from hashlib import sha256
 from argparse import ArgumentParser
 from pathlib import Path
 from os import makedirs, path
-from shlex import quote
 from shutil import rmtree
 import yaml
-from tqdm import tqdm
 from time import perf_counter
 from subprocess import run, PIPE, TimeoutExpired, Popen
 from more_itertools import chunked
@@ -33,73 +31,70 @@ class Container(TypedDict):
 
 @beartype
 class WorkerServer(JsonRESTServer):
-    working_directory: str
-    docker_compose_yaml_path: str
-    built_dockerfile_contents: list[str] | None
-    running_containers: list[Container] | None
-    destroy_sandboxes_process: Popen | None
+    root_working_directory: str
+    built_dockerfile_contents: dict[str, list[str]]
+    running_containers: dict[str, list[Container]]
+    destroy_sandboxes_processes: dict[str, Popen]
 
     def __init__(
         self,
         host: str = "0.0.0.0",
         port: int = 8080,
-        working_directory: str = path.join(Path.home(), ".scalable_docker"),
+        root_working_directory: str = path.join(Path.home(), ".scalable_docker"),
     ) -> None:
         super().__init__(host=host, port=port)
-        self.working_directory = working_directory
-        self.docker_compose_yaml_path = path.join(
-            working_directory, "docker-compose.yaml"
-        )
-        self.built_dockerfile_contents = None
-        self.running_containers = None
-        self.destroy_sandboxes_process = None
+        self.root_working_directory = root_working_directory
+        self.built_dockerfile_contents = {}
+        self.running_containers = {}
+        self.destroy_sandboxes_processes = {}
+
+    def working_directory(self, key: str) -> str:
+        return path.join(self.root_working_directory, key)
+
+    def docker_compose_yaml_path(self, key: str) -> str:
+        return path.join(self.working_directory(key=key), "docker-compose.yaml")
 
     def functions_exposed_through_api(self) -> dict[str, Callable]:
         return {
+            "docker_prune_everything": self.docker_prune_everything,
             "build_images": self.build_images,
-            "push_built_images_to_docker_hub": self.push_built_images_to_docker_hub,
             "start_containers": self.start_containers,
             "start_destroying_containers": self.start_destroying_containers,
             "run_commands": self.run_commands,
         }
 
+    def docker_prune_everything(self) -> None:
+        run_and_raise_if_fails(
+            ["docker", "system", "prune", "-a", "--volumes", "--force"]
+        )
+
+        self.built_dockerfile_contents = {}
+        self.running_containers = {}
+        self.destroy_sandboxes_processes = {}
+
     def build_images(
         self,
+        key: str,
         images: list[Image],
-        prune: bool,
         batch_size: int | None,
         max_attempts: int,
-        pull_from_docker_hub: bool,
-        docker_hub_username: str | None,
     ) -> None:
-        assert (docker_hub_username is not None) == pull_from_docker_hub
+        images = list(set(images))
 
-        if self.running_containers is not None:
-            self.start_destroying_containers()
-            self.wait_until_done_destroying_containers()
+        if key in self.running_containers.keys():
+            self.start_destroying_containers(key=key)
+            self.wait_until_done_destroying_containers(key=key)
 
-        if prune:
-            run_and_raise_if_fails(
-                ["docker", "system", "prune", "-a", "--volumes", "--force"]
-            )
-
-        rmtree(self.working_directory, ignore_errors=True)
+        rmtree(self.working_directory(key=key), ignore_errors=True)
 
         docker_compose_yaml: dict[str, dict] = {"services": {}}
         for image in unique(images):
             image_name = self.image_name(dockerfile_content=image["dockerfile_content"])
-            image_directory = path.join(self.working_directory, image_name)
+            image_directory = path.join(self.working_directory(key=key), image_name)
             rmtree(image_directory, ignore_errors=True)
             makedirs(image_directory)
             with open(path.join(image_directory, "Dockerfile"), "w") as f:
-                if pull_from_docker_hub:
-                    tagged_image_name = self.tagged_image_name(
-                        dockerfile_content=image["dockerfile_content"],
-                        docker_hub_username=docker_hub_username,  # type: ignore
-                    )
-                    f.write(f"FROM {tagged_image_name}")
-                else:
-                    f.write(image["dockerfile_content"])
+                f.write(image["dockerfile_content"])
             docker_compose_yaml["services"][image_name] = {
                 "build": image_directory,
                 "command": "tail -f /dev/null",
@@ -113,7 +108,7 @@ class WorkerServer(JsonRESTServer):
                 },
             }
 
-        with open(self.docker_compose_yaml_path, "w") as f:
+        with open(self.docker_compose_yaml_path(key=key), "w") as f:
             yaml.dump(docker_compose_yaml, f)
 
         image_names: list[str] = list(docker_compose_yaml["services"].keys())
@@ -124,7 +119,8 @@ class WorkerServer(JsonRESTServer):
         )
         for i, image_name_batch in enumerate(batched_image_names):
             print(
-                f"BUILDING {len(image_name_batch)} IMAGES (BATCH {i + 1} OF {len(batched_image_names)})", flush=True
+                f"BUILDING {len(image_name_batch)} IMAGES (BATCH {i + 1} OF {len(batched_image_names)})",
+                flush=True,
             )
             for i_attempt in range(max_attempts):
                 print(f"ATTMEPT {i_attempt} OUT OF {max_attempts}", flush=True)
@@ -134,7 +130,7 @@ class WorkerServer(JsonRESTServer):
                             "docker",
                             "compose",
                             "-f",
-                            self.docker_compose_yaml_path,
+                            self.docker_compose_yaml_path(key=key),
                             "build",
                         ]
                         + image_name_batch
@@ -142,59 +138,35 @@ class WorkerServer(JsonRESTServer):
                     break
                 except Exception as e:
                     print(
-                        "DOCKER COMPOSE BUILD FAILED WITH THE FOLLOWING EXCEPTION:", e, flush=True
+                        "DOCKER COMPOSE BUILD FAILED WITH THE FOLLOWING EXCEPTION:",
+                        e,
+                        flush=True,
                     )
                     if i_attempt == max_attempts - 1:
                         raise e
             print("BUILT!", flush=True)
 
-        self.built_dockerfile_contents = list(
+        self.built_dockerfile_contents[key] = list(
             set(image["dockerfile_content"] for image in images)
         )
-
-    def push_built_images_to_docker_hub(
-        self,
-        docker_hub_username: str,
-        # docker_hub_access_token: str,
-    ) -> None:
-        # run_and_raise_if_fails(
-        #     f"echo {quote(docker_hub_access_token)} | docker login --username {quote(docker_hub_username)} --password-stdin",
-        #     shell=True,
-        # )
-
-        for dockerfile_content in tqdm(
-            self.built_dockerfile_contents, desc="pushing to docker hub"
-        ):
-            image_name = "scalable_docker-" + self.image_name(
-                dockerfile_content=dockerfile_content
-            )
-            tagged_image_name = self.tagged_image_name(
-                dockerfile_content=dockerfile_content,
-                docker_hub_username=docker_hub_username,
-            )
-            run_and_raise_if_fails(["docker", "tag", image_name, tagged_image_name])
-            run_and_raise_if_fails(["docker", "push", tagged_image_name])
 
     def image_name(self, dockerfile_content: str) -> str:
         return sha256(dockerfile_content.encode()).hexdigest()
 
-    def tagged_image_name(
-        self, dockerfile_content: str, docker_hub_username: str
-    ) -> str:
-        return f"{docker_hub_username}/scalable_docker-{self.image_name(dockerfile_content=dockerfile_content)}"
-
-    def start_containers(self, dockerfile_contents: list[str]) -> list[Container]:
-        assert self.built_dockerfile_contents is not None, (
+    def start_containers(
+        self, key: str, dockerfile_contents: list[str]
+    ) -> list[Container]:
+        assert key in self.built_dockerfile_contents.keys(), (
             "You must call build_images before calling start_containers."
         )
 
-        if self.running_containers is not None:
-            self.start_destroying_containers()
+        if key in self.running_containers.keys():
+            self.start_destroying_containers(key=key)
 
-        self.wait_until_done_destroying_containers()
+        self.wait_until_done_destroying_containers(key=key)
 
         assert all(
-            dockerfile_content in self.built_dockerfile_contents
+            dockerfile_content in self.built_dockerfile_contents[key]
             for dockerfile_content in dockerfile_contents
         ), (
             "The dockerfile_contents argument to start_containers should only contain dockerfiles that have been given to the previous call to build_images."
@@ -204,7 +176,7 @@ class WorkerServer(JsonRESTServer):
             "docker",
             "compose",
             "-f",
-            self.docker_compose_yaml_path,
+            self.docker_compose_yaml_path(key=key),
             "up",
             "-d",
         ]
@@ -225,23 +197,23 @@ class WorkerServer(JsonRESTServer):
                 }
             )
 
-        self.running_containers = containers
+        self.running_containers[key] = containers
 
         return containers
 
-    def start_destroying_containers(self) -> None:
-        assert self.running_containers is not None, (
+    def start_destroying_containers(self, key: str) -> None:
+        assert key not in self.running_containers.keys(), (
             "You must call start_containers before each call to destroy_containers."
         )
 
-        self.running_containers = None
+        del self.running_containers[key]
 
-        self.destroy_sandboxes_process = Popen(
+        self.destroy_sandboxes_processes[key] = Popen(
             [
                 "docker",
                 "compose",
                 "-f",
-                self.docker_compose_yaml_path,
+                self.docker_compose_yaml_path(key=key),
                 "down",
                 "--volumes",
             ],
@@ -251,37 +223,31 @@ class WorkerServer(JsonRESTServer):
             errors="replace",
         )
 
-    def wait_until_done_destroying_containers(self) -> None:
-        if self.destroy_sandboxes_process is None:
+    def wait_until_done_destroying_containers(self, key: str) -> None:
+        if key not in self.destroy_sandboxes_processes.keys():
             return
 
-        stdout, stderr = self.destroy_sandboxes_process.communicate()
+        stdout, stderr = self.destroy_sandboxes_processes[key].communicate()
 
         print("DOCKER COMPOSE DOWN FINISHED RUNNING", flush=True)
         print("DOCKER COMPOSE DOWN STDOUT:", stdout, flush=True)
         print("DOCKER COMPOSE DOWN STDERR:", stderr, flush=True)
 
-        assert self.destroy_sandboxes_process.returncode == 0, (
-            f"Error trying to destroy sandboxes: docker compose down returned with a nonzero exit code.\nExit code: {self.destroy_sandboxes_process.returncode}\nStdout:{stdout}\nStderr:{stderr}"
+        assert self.destroy_sandboxes_processes[key].returncode == 0, (
+            f"Error trying to destroy sandboxes: docker compose down returned with a nonzero exit code.\nExit code: {self.destroy_sandboxes_processes[key].returncode}\nStdout:{stdout}\nStderr:{stderr}"
         )
 
-        self.destroy_sandboxes_process = None
+        del self.destroy_sandboxes_processes[key]
 
     def run_single_command(
-        self, container: Container, command: str, timeout_seconds: float | int
+        self, key: str, container: Container, command: str, timeout_seconds: float | int
     ) -> ProcessOutput:
         assert (
-            self.destroy_sandboxes_process is None
-            and self.running_containers is not None
+            key not in self.destroy_sandboxes_processes.keys()
+            and key in self.running_containers.keys()
         ), "You must call start_containers before calling run_single_command."
 
-        assert self.destroy_sandboxes_process is None
-
-        assert self.running_containers is not None, (
-            "You must call start_containers before calling run_commands."
-        )
-
-        assert container in self.running_containers, (
+        assert container in self.running_containers[key], (
             "The container argument to run_commands must be one of the values returned by the previous call to start_containers."
         )
 
@@ -291,7 +257,7 @@ class WorkerServer(JsonRESTServer):
                     "docker",
                     "compose",
                     "-f",
-                    self.docker_compose_yaml_path,
+                    self.docker_compose_yaml_path(key=key),
                     "exec",
                     f"--index={container['index']}",
                     self.image_name(dockerfile_content=container["dockerfile_content"]),
@@ -313,16 +279,12 @@ class WorkerServer(JsonRESTServer):
 
     def run_commands(
         self,
+        key: str,
         container: Container,
         commands: list[str],
         total_timeout_seconds: float | int,
         per_command_timeout_seconds: float | int,
     ) -> list[dict]:
-        assert (
-            self.destroy_sandboxes_process is None
-            and self.running_containers is not None
-        ), "You must call start_containers before calling run_commands."
-
         start_time = perf_counter()
 
         outputs: list[ProcessOutput] = []
@@ -337,6 +299,7 @@ class WorkerServer(JsonRESTServer):
                 continue
 
             output = self.run_single_command(
+                key=key,
                 container=container,
                 command=command,
                 timeout_seconds=min(per_command_timeout_seconds, remaining_time),
@@ -374,14 +337,16 @@ def main_cli() -> None:
     parser.add_argument("--host", type=str, default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument(
-        "--working-directory",
+        "--root-working-directory",
         type=str,
         default=path.join(Path.home(), ".scalable_docker"),
     )
     args = parser.parse_args()
 
     server = WorkerServer(
-        host=args.host, port=args.port, working_directory=args.working_directory
+        host=args.host,
+        port=args.port,
+        root_working_directory=args.root_working_directory,
     )
 
     server.serve()
