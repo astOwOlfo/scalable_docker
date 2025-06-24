@@ -79,8 +79,6 @@ class WorkerServer(JsonRESTServer):
         batch_size: int | None,
         max_attempts: int,
     ) -> None:
-        images = list(set(images))
-
         if key in self.running_containers.keys():
             self.start_destroying_containers(key=key)
             self.wait_until_done_destroying_containers(key=key)
