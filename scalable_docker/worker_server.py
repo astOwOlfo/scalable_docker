@@ -178,7 +178,7 @@ class WorkerServer(JsonRESTServer):
             "up",
             "-d",
         ]
-        for dockerfile_content in self.built_dockerfile_contents:
+        for dockerfile_content in self.built_dockerfile_contents[key]:
             image_name = self.image_name(dockerfile_content=dockerfile_content)
             count = dockerfile_contents.count(dockerfile_content)
             docker_compose_up_command += ["--scale", f"{image_name}={count}"]
