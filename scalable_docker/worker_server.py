@@ -200,7 +200,7 @@ class WorkerServer(JsonRESTServer):
         return containers
 
     def start_destroying_containers(self, key: str) -> None:
-        assert key not in self.running_containers.keys(), (
+        assert key in self.running_containers.keys(), (
             "You must call start_containers before each call to destroy_containers."
         )
 
