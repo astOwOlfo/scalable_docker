@@ -1,4 +1,5 @@
 from hashlib import sha256
+from shlex import quote
 from argparse import ArgumentParser
 from pathlib import Path
 from os import makedirs, path
@@ -185,6 +186,8 @@ class WorkerServer(JsonRESTServer):
 
         run_and_raise_if_fails(docker_compose_up_command)
 
+        run("echo THERE ARE $(docker ps -qa | wc -l) RUNNING CONTAINERS", shell=True)
+
         containers: list[Container] = []
         for i, dockerfile_content in enumerate(dockerfile_contents):
             image_name = self.image_name(dockerfile_content=dockerfile_content)
@@ -207,19 +210,14 @@ class WorkerServer(JsonRESTServer):
         del self.running_containers[key]
 
         self.destroy_sandboxes_processes[key] = Popen(
-            [
-                "docker",
-                "compose",
-                "-f",
-                self.docker_compose_yaml_path(key=key),
-                "down",
-                "--volumes",
-            ],
+            f"docker compose -f {quote(self.docker_compose_yaml_path(key=key))} down --volumes",
             stdout=PIPE,
             stderr=PIPE,
             text=True,
             errors="replace",
+            shell=True,
         )
+
 
     def wait_until_done_destroying_containers(self, key: str) -> None:
         if key not in self.destroy_sandboxes_processes.keys():

@@ -48,12 +48,14 @@ class JsonRESTServer(ABC):
             result = self.get_response(**arguments)
             status_code = 200
         except Exception as e:
+            print(f"Uncaught exception:\n\n{e}\n{traceback.format_exc()}")
             result = {"error": f"Uncaught exception:\n\n{e}\n{traceback.format_exc()}"}
             status_code = 400
 
         try:
             return result, status_code
         except Exception:
+            print(f"Unable to convert response to json. {str(result)=}")
             return {"error": f"Unable to convert response to json. {str(result)=}"}, 400
 
     def get_response(self, **kwargs) -> Any:
