@@ -245,7 +245,7 @@ class HeadServer(JsonRESTServer):
         commands: list[str],
         total_timeout_seconds: float | int,
         per_command_timeout_seconds: float | int,
-    ) -> list[dict]:
+    ) -> Any:
         worker = self.workers[container["worker_index"]]
 
         response = worker.client.call_server(
