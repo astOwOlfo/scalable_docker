@@ -122,7 +122,7 @@ class WorkerServer(JsonRESTServer):
                 flush=True,
             )
             for i_attempt in range(max_attempts):
-                print(f"ATTMEPT {i_attempt} OUT OF {max_attempts}", flush=True)
+                print(f"ATTEMPT {i_attempt} OUT OF {max_attempts}", flush=True)
                 try:
                     run_and_raise_if_fails(
                         [
