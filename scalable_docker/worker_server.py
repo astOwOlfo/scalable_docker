@@ -258,7 +258,7 @@ class WorkerServer(JsonRESTServer):
                     "-f",
                     self.docker_compose_yaml_path(key=key),
                     "exec",
-                    f"--index={container['index']}",
+                    f"--index={container['index']+1}",
                     self.image_name(dockerfile_content=container["dockerfile_content"]),
                     "/bin/bash",
                     "-c",
