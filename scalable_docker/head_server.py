@@ -102,6 +102,7 @@ class HeadServer(JsonRESTServer):
         batch_size: int | None,
         max_attempts: int,
         workers_per_dockerfile: int | None,
+        ignore_errors: bool,
     ) -> Any:
         assert len(images) > 0
 
@@ -138,6 +139,7 @@ class HeadServer(JsonRESTServer):
                     ],
                     batch_size=batch_size,
                     max_attempts=max_attempts,
+                    ignore_errors=ignore_errors,
                 )
                 for i_worker, worker in enumerate(self.workers)
             ]

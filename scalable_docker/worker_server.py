@@ -79,6 +79,7 @@ class WorkerServer(JsonRESTServer):
         images: list[Image],
         batch_size: int | None,
         max_attempts: int,
+        ignore_errors: bool,
     ) -> None:
         if key in self.running_containers.keys():
             self.start_destroying_containers(key=key)
@@ -137,11 +138,13 @@ class WorkerServer(JsonRESTServer):
                     break
                 except Exception as e:
                     print(
-                        "DOCKER COMPOSE BUILD FAILED WITH THE FOLLOWING EXCEPTION:",
+                        "DOCKER COMPOSE FAILED BUILDING IMAGES WITH HASHES",
+                        *image_names,
+                        "WITH THE FOLLOWING EXCEPTION:",
                         e,
                         flush=True,
                     )
-                    if i_attempt == max_attempts - 1:
+                    if not ignore_errors and i_attempt == max_attempts - 1:
                         raise e
             print("BUILT!", flush=True)
 
