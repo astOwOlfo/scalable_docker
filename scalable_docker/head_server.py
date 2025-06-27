@@ -51,6 +51,7 @@ class HeadServer(JsonRESTServer):
         super().__init__(host=host, port=port)
         self.workers = [Worker(url) for url in worker_urls]
         self.running_containers = {}
+        self.dockerfile_content_to_worker_indices: dict[str, dict[str, list[int]]] = {}
         self.delay_before_retrying_worker_after_error_seconds = (
             delay_before_retrying_worker_after_error_seconds
         )
