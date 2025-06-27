@@ -176,7 +176,7 @@ class HeadServer(JsonRESTServer):
 
         healthy_worker_indices = self.healthy_worker_indices()
 
-        print(f"{healthy_worker_indices=}")
+        print(f"{healthy_worker_indices=}", flush=True)
 
         if len(healthy_worker_indices) == 0:
             return {"error": "There are no healthy workers."}
