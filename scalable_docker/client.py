@@ -82,7 +82,7 @@ class ScalableDockerClient(AsyncJsonRESTClient):
         images: list[Image],
         batch_size: int | None = None,
         max_attempts: int = 1,
-        # workers_per_dockerfile: int | None = None,
+        workers_per_dockerfile: int | None = None,
     ) -> None:
         print(f"Building {len(images)} images...")
 
@@ -92,7 +92,7 @@ class ScalableDockerClient(AsyncJsonRESTClient):
             images=[asdict(image) for image in images],
             batch_size=batch_size,
             max_attempts=max_attempts,
-            # workers_per_dockerfile=workers_per_dockerfile,
+            workers_per_dockerfile=workers_per_dockerfile,
         )
 
         if self.is_error(response):
