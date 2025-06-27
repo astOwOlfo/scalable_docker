@@ -38,6 +38,7 @@ class Worker:
 class HeadServer(JsonRESTServer):
     workers: list[Worker]
     running_containers: dict[str, list[Container]]
+    dockerfile_content_to_worker_indices: dict[str, dict[str, list[int]]]
     delay_before_retrying_worker_after_error_seconds: float | int
 
     def __init__(
@@ -99,8 +100,26 @@ class HeadServer(JsonRESTServer):
         images: list[Image],
         batch_size: int | None,
         max_attempts: int,
+        workers_per_dockerfile: int | None,
     ) -> Any:
         assert len(images) > 0
+
+        if workers_per_dockerfile is None:
+            workers_per_dockerfile = len(self.workers)
+
+        assert 0 < workers_per_dockerfile <= len(self.workers)
+
+        dockerfile_contents: list[str] = list(
+            set(image["dockerfile_content"] for image in images)
+        )
+        random.shuffle(dockerfile_contents)
+
+        self.dockerfile_content_to_worker_indices[key] = {
+            dockerfile_content: random.sample(
+                list(range(len(self.workers))), k=workers_per_dockerfile
+            )
+            for dockerfile_content in dockerfile_contents
+        }
 
         with ThreadPoolExecutor(max_workers=len(self.workers)) as executor:
             futures = [
@@ -108,11 +127,18 @@ class HeadServer(JsonRESTServer):
                     worker.client.call_server,
                     function="build_images",
                     key=key,
-                    images=images,
+                    images=[
+                        image
+                        for image in images
+                        if i_worker
+                        in self.dockerfile_content_to_worker_indices[key][
+                            image["dockerfile_content"]
+                        ]
+                    ],
                     batch_size=batch_size,
                     max_attempts=max_attempts,
                 )
-                for worker in self.workers
+                for i_worker, worker in enumerate(self.workers)
             ]
             responses = [future.result() for future in futures]
 
@@ -160,9 +186,16 @@ class HeadServer(JsonRESTServer):
         dockerfile_contents_by_worker: list[list[str]] = [
             [] for _ in range(len(healthy_worker_indices))
         ]
-        for i, dockerfile_content in enumerate(dockerfile_contents):
-            container_indices_by_worker[i % len(healthy_worker_indices)].append(i)
-            dockerfile_contents_by_worker[i % len(healthy_worker_indices)].append(
+        for i_container, dockerfile_content in enumerate(dockerfile_contents):
+            compatible_worker_indices: list[int] = (
+                self.dockerfile_content_to_worker_indices[key][dockerfile_content]
+            )
+            compatible_worker_index = min(
+                compatible_worker_indices,
+                key=lambda i: len(container_indices_by_worker[i]),
+            )
+            container_indices_by_worker[compatible_worker_index].append(i_container)
+            dockerfile_contents_by_worker[compatible_worker_index].append(
                 dockerfile_content
             )
 

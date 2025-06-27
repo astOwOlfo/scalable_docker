@@ -49,7 +49,9 @@ class MultiCommandTimeout:
 class ScalableDockerClient(AsyncJsonRESTClient):
     key: str
 
-    def __init__(self, *args, key: str, server_url: str | None = None, **kwargs) -> None:
+    def __init__(
+        self, *args, key: str, server_url: str | None = None, **kwargs
+    ) -> None:
         if server_url is None:
             server_url = os.environ.get("SCALABLE_DOCKER_SERVER_URL")
 
@@ -80,6 +82,7 @@ class ScalableDockerClient(AsyncJsonRESTClient):
         images: list[Image],
         batch_size: int | None = None,
         max_attempts: int = 1,
+        workers_per_dockerfile: int | None = None,
     ) -> None:
         print(f"Building {len(images)} images...")
 
@@ -89,6 +92,7 @@ class ScalableDockerClient(AsyncJsonRESTClient):
             images=[asdict(image) for image in images],
             batch_size=batch_size,
             max_attempts=max_attempts,
+            workers_per_dockerfile=workers_per_dockerfile,
         )
 
         if self.is_error(response):
@@ -104,9 +108,7 @@ class ScalableDockerClient(AsyncJsonRESTClient):
 
         return response
 
-    async def start_containers(
-        self, dockerfile_contents: list[str]
-    ) -> list[Container]:
+    async def start_containers(self, dockerfile_contents: list[str]) -> list[Container]:
         response = await self.call_server(
             function="start_containers",
             key=self.key,
