@@ -221,7 +221,6 @@ class WorkerServer(JsonRESTServer):
             shell=True,
         )
 
-
     def wait_until_done_destroying_containers(self, key: str) -> None:
         if key not in self.destroy_sandboxes_processes.keys():
             return
@@ -258,7 +257,7 @@ class WorkerServer(JsonRESTServer):
                     "-f",
                     self.docker_compose_yaml_path(key=key),
                     "exec",
-                    f"--index={container['index']+1}",
+                    f"--index={container['index'] + 1}",
                     self.image_name(dockerfile_content=container["dockerfile_content"]),
                     "/bin/bash",
                     "-c",
