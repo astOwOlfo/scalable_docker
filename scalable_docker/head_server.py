@@ -164,7 +164,7 @@ class HeadServer(JsonRESTServer):
             for i, worker in enumerate(self.workers)
             if worker.last_error_time is None
             or worker.last_error_time
-            <= perf_counter() + self.delay_before_retrying_worker_after_error_seconds
+            <= perf_counter() - self.delay_before_retrying_worker_after_error_seconds
         ]
 
     def number_healthy_workers(self) -> int:
