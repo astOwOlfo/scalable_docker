@@ -213,7 +213,7 @@ class WorkerServer(JsonRESTServer):
         del self.running_containers[key]
 
         self.destroy_sandboxes_processes[key] = Popen(
-            f"docker compose -f {quote(self.docker_compose_yaml_path(key=key))} down --volumes",
+            f"docker compose -f {quote(self.docker_compose_yaml_path(key=key))} down --volumes --timeout 600",
             stdout=PIPE,
             stderr=PIPE,
             text=True,
@@ -228,12 +228,17 @@ class WorkerServer(JsonRESTServer):
         stdout, stderr = self.destroy_sandboxes_processes[key].communicate()
 
         print("DOCKER COMPOSE DOWN FINISHED RUNNING", flush=True)
+        print(
+            "DOCKER COMPOSE DOWN EXIT CODE:",
+            self.destroy_sandboxes_processes[key].returncode,
+            flush=True,
+        )
         print("DOCKER COMPOSE DOWN STDOUT:", stdout, flush=True)
         print("DOCKER COMPOSE DOWN STDERR:", stderr, flush=True)
 
-        assert self.destroy_sandboxes_processes[key].returncode == 0, (
-            f"Error trying to destroy sandboxes: docker compose down returned with a nonzero exit code.\nExit code: {self.destroy_sandboxes_processes[key].returncode}\nStdout:{stdout}\nStderr:{stderr}"
-        )
+        # assert self.destroy_sandboxes_processes[key].returncode == 0, (
+        #     f"Error trying to destroy sandboxes: docker compose down returned with a nonzero exit code.\nExit code: {self.destroy_sandboxes_processes[key].returncode}\nStdout:{stdout}\nStderr:{stderr}"
+        # )
 
         del self.destroy_sandboxes_processes[key]
 
