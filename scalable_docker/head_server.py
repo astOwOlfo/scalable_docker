@@ -247,8 +247,8 @@ class HeadServer(JsonRESTServer):
         if key not in self.running_containers.keys():
             return
 
-        used_worker_indices = set(
-            container["worker_index"] for container in self.running_containers[key]
+        used_worker_indices = list(
+            set(container["worker_index"] for container in self.running_containers[key])
         )
 
         del self.running_containers[key]
@@ -264,6 +264,10 @@ class HeadServer(JsonRESTServer):
             ]
 
             responses = [future.result() for future in futures]
+
+        for i_worker, response in zip(used_worker_indices, responses, strict=True):
+            if self.is_error(response):
+                self.workers[i_worker].last_error_time = perf_counter()
 
         unsuccessful_responses = [
             response for response in responses if self.is_error(response)
