@@ -213,7 +213,7 @@ class WorkerServer(JsonRESTServer):
         del self.running_containers[key]
 
         self.destroy_sandboxes_processes[key] = Popen(
-            f"docker compose -f {quote(self.docker_compose_yaml_path(key=key))} down --volumes --timeout 600",
+            f"docker compose -f {quote(self.docker_compose_yaml_path(key=key))} down --volumes",
             stdout=PIPE,
             stderr=PIPE,
             text=True,
