@@ -190,9 +190,18 @@ class HeadServer(JsonRESTServer):
             [] for _ in range(len(healthy_worker_indices))
         ]
         for i_container, dockerfile_content in enumerate(dockerfile_contents):
-            compatible_worker_indices: list[int] = (
-                self.dockerfile_content_to_worker_indices[key][dockerfile_content]
+            compatible_worker_indices: list[int] = [
+                i
+                for i in self.dockerfile_content_to_worker_indices[key][
+                    dockerfile_content
+                ]
+                if i in healthy_worker_indices
+            ]
+
+            assert len(compatible_worker_indices) > 0, (
+                "None of the workers on which the requested dockerfile is built are healthy."
             )
+
             compatible_worker_index = min(
                 compatible_worker_indices,
                 key=lambda i: len(container_indices_by_worker[i]),
