@@ -254,6 +254,8 @@ class WorkerServer(JsonRESTServer):
             "The container argument to run_commands must be one of the values returned by the previous call to start_containers."
         )
 
+        command = command[:65536] # monkey patch
+
         print(f"{len(command)=}", flush=True)
 
         try:
@@ -359,3 +361,4 @@ def main_cli() -> None:
 
 if __name__ == "__main__":
     main_cli()
+ 
