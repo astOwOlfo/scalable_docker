@@ -254,6 +254,8 @@ class WorkerServer(JsonRESTServer):
             "The container argument to run_commands must be one of the values returned by the previous call to start_containers."
         )
 
+        print(f"{len(command)=}")
+
         try:
             output = run(
                 [

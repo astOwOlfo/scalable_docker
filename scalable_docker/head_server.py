@@ -183,12 +183,12 @@ class HeadServer(JsonRESTServer):
         if len(healthy_worker_indices) == 0:
             return {"error": "There are no healthy workers."}
 
-        container_indices_by_worker: list[list[int]] = [
-            [] for _ in range(len(healthy_worker_indices))
-        ]
-        dockerfile_contents_by_worker: list[list[str]] = [
-            [] for _ in range(len(healthy_worker_indices))
-        ]
+        container_indices_by_worker: dict[int, list[int]] = {
+            i: [] for i in healthy_worker_indices
+        }
+        dockerfile_contents_by_worker: dict[int, list[str]] = {
+            i: [] for i in healthy_worker_indices
+        }
         for i_container, dockerfile_content in enumerate(dockerfile_contents):
             compatible_worker_indices: list[int] = [
                 i
@@ -217,29 +217,29 @@ class HeadServer(JsonRESTServer):
                     self.workers[i_healthy_worker].client.call_server,
                     function="start_containers",
                     key=key,
-                    dockerfile_contents=dockerfile_contents_for_worker,
+                    dockerfile_contents=dockerfile_contents_by_worker[i_healthy_worker],
                 )
-                for i_healthy_worker, dockerfile_contents_for_worker in zip(
-                    healthy_worker_indices, dockerfile_contents_by_worker, strict=True
-                )
+                for i_healthy_worker in healthy_worker_indices
             ]
 
             responses = [future.result() for future in futures]
 
         unsuccessful_responses: list[dict] = []
         containers: list[Container | None] = [None] * len(dockerfile_contents)
-        for i_healthy_worker, response, container_indices in zip(
-            healthy_worker_indices, responses, container_indices_by_worker, strict=True
+        for i_healthy_worker, response in zip(
+            healthy_worker_indices, responses, strict=True
         ):
             if self.is_error(response):
                 self.workers[i_healthy_worker].last_error_time = perf_counter()
                 unsuccessful_responses.append(response)
                 continue
             for i, container in enumerate(response):
-                assert containers[container_indices[i]] is None
-                containers[container_indices[i]] = container | {
-                    "worker_index": i_healthy_worker
-                }
+                assert (
+                    containers[container_indices_by_worker[i_healthy_worker][i]] is None
+                )
+                containers[container_indices_by_worker[i_healthy_worker][i]] = (
+                    container | {"worker_index": i_healthy_worker}
+                )
 
         if len(unsuccessful_responses) > 0:
             return {
