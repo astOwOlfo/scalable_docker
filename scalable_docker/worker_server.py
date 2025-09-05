@@ -14,7 +14,7 @@ from typing import TypedDict
 from beartype import beartype
 
 from scalable_docker.rest_server_base import JsonRESTServer
-from scalable_docker.client import ProcessOutput
+from scalable_docker.client import ProcessOutput, TIMED_OUT_PROCESS_OUTPUT
 
 
 @beartype
@@ -277,7 +277,7 @@ class WorkerServer(JsonRESTServer):
                 errors="replace",
             )
         except TimeoutExpired:
-            return ProcessOutput(exit_code=1, stdout="", stderr="timed out")
+            return TIMED_OUT_PROCESS_OUTPUT
         return ProcessOutput(
             exit_code=output.returncode, stdout=output.stdout, stderr=output.stderr
         )
@@ -299,7 +299,7 @@ class WorkerServer(JsonRESTServer):
             remaining_time = total_timeout_seconds - time_spent_so_far
             if remaining_time <= 0:
                 outputs.append(
-                    ProcessOutput(exit_code=1, stdout="", stderr="timed out")
+                    TIMED_OUT_PROCESS_OUTPUT
                 )
                 continue
 
