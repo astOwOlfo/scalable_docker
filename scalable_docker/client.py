@@ -17,6 +17,9 @@ class ProcessOutput:
     stderr: str
 
 
+TIMED_OUT_PROCESS_OUTPUT = ProcessOutput(exit_code=1, stdout="", stderr="timed out")
+
+
 @beartype
 class RemoteDockerSandbox(JsonRESTClient):
     def __init__(
