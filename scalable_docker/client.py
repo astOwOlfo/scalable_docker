@@ -45,6 +45,9 @@ class MultiCommandTimeout:
     total_seconds: int | float
 
 
+TIMED_OUT_PROCESS_OUTPUT = ProcessOutput(exit_code=1, stdout="", stderr="timed out")
+
+
 @beartype
 class ScalableDockerClient(AsyncJsonRESTClient):
     key: str
