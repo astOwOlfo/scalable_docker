@@ -17,7 +17,11 @@ class JsonRESTClient:
     def endpoint(self):
         return f"{self.server_url}/process"
 
-    def call_server(self, request_timeout_seconds: float | int | None = None, **kwargs) -> Any:
+    def call_server(self, **kwargs) -> Any:
+        request_timeout_seconds: float | int | None = kwargs.get("request_timeout_seconds")
+        if "request_timeout_seconds" in kwargs.keys():
+            del kwargs["request_timeout_seconds"]
+
         try:
             response = requests.post(
                 self.endpoint,
