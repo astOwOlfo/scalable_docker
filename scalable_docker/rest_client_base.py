@@ -17,12 +17,13 @@ class JsonRESTClient:
     def endpoint(self):
         return f"{self.server_url}/process"
 
-    def call_server(self, **kwargs) -> Any:
+    def call_server(self, **kwargs, timeout_seconds: float | int | None = None) -> Any:
         try:
             response = requests.post(
                 self.endpoint,
                 json=kwargs,
                 headers={"Content-Type": "application/json"},
+                timeout=timeout_seconds,
             )
         except Exception as e:
             return {
