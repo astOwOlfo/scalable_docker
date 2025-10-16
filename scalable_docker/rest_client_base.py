@@ -22,6 +22,8 @@ class JsonRESTClient:
         if "request_timeout_seconds" in kwargs.keys():
             del kwargs["request_timeout_seconds"]
 
+        print(f"{set(kwargs.keys())=}")
+        
         try:
             response = requests.post(
                 self.endpoint,
