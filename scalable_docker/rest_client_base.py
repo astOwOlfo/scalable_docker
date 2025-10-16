@@ -17,13 +17,7 @@ class JsonRESTClient:
     def endpoint(self):
         return f"{self.server_url}/process"
 
-    def call_server(self, **kwargs) -> Any:
-        request_timeout_seconds: float | int | None = kwargs.get("request_timeout_seconds")
-        if "request_timeout_seconds" in kwargs.keys():
-            del kwargs["request_timeout_seconds"]
-
-        print(f"{set(kwargs.keys())=}")
-        
+    def call_server(self, request_timeout_seconds: int | float | None = None, **kwargs) -> Any:
         try:
             response = requests.post(
                 self.endpoint,
@@ -69,11 +63,11 @@ class AsyncJsonRESTClient:
     def endpoint(self):
         return f"{self.server_url}/process"
 
-    async def call_server(self, **kwargs) -> Any:
+    async def call_server(self, request_timeout_seconds: float | int | None = None, **kwargs) -> Any:
         for i_retry in range(self.max_retries):
             try:
                 async with aiohttp.ClientSession(
-                    timeout=aiohttp.ClientTimeout()
+                    timeout=aiohttp.ClientTimeout(total=request_timeout_seconds)
                 ) as session:
                     async with session.post(
                         self.endpoint,
