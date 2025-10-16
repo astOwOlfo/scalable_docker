@@ -146,6 +146,7 @@ class ScalableDockerClient(AsyncJsonRESTClient):
             commands=commands,
             total_timeout_seconds=timeout.seconds_per_command,
             per_command_timeout_seconds=timeout.total_seconds,
+            timeout_seconds=4 * timeout.total_seconds,
         )
 
         if self.is_error(response):
