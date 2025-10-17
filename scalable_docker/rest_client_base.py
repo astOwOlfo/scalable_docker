@@ -23,7 +23,7 @@ class JsonRESTClient:
                 self.endpoint,
                 json=kwargs,
                 headers={"Content-Type": "application/json"},
-                timeout=requeset_timeout_seconds,
+                timeout=request_timeout_seconds,
             )
         except Exception as e:
             return {
