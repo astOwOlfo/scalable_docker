@@ -42,6 +42,7 @@ class JsonRESTClient:
 
         return parsed_response
 
+from uuid import uuid4 # TODO: remove this line
 
 @beartype
 class AsyncJsonRESTClient:
@@ -64,6 +65,10 @@ class AsyncJsonRESTClient:
         return f"{self.server_url}/process"
 
     async def call_server(self, request_timeout_seconds: float | int | None = None, **kwargs) -> Any:
+        id = uuid4()
+        
+        print(f"Calling server {id}")
+
         if request_timeout_seconds is not None:
             try:
                 return await asyncio.wait_for(
@@ -71,6 +76,7 @@ class AsyncJsonRESTClient:
                     timeout=request_timeout_seconds,
                 )
             except asyncio.TimeoutException as e:
+                print(f"Done calling server {id} timed out")
                 return {"error": f"Request to server timed out after {request_timeout_seconds} seconds."}
             
         
@@ -90,10 +96,12 @@ class AsyncJsonRESTClient:
                             parsed_response = None
 
                         if response.status != 200:
+                            print(f"Done calling server {id} bad status")
                             return {
                                 "error": f"Error communicating with server.\nStatus code: {response.status}.\nResponse json: {parsed_response}"
                             }
 
+                        print(f"Done calling server {id} succecss")
                         return parsed_response
             except aiohttp.ClientConnectorError as e:
                 print(
@@ -102,10 +110,12 @@ class AsyncJsonRESTClient:
                 if i_retry < self.max_retries - 1:
                     await asyncio.sleep(self.wait_before_retrying_seconds)
                     continue
+                print(f"Done calling server {id} aiohttp.ClientConnectionError")
                 return {
                     "error": f"Error communicating with server: {e} {traceback.format_exc()}"
                 }
             except Exception as e:
+                print(f"Done calling server {id} Exception")
                 return {
                     "error": f"Error communicating with server: {e} {traceback.format_exc()}"
                 }
