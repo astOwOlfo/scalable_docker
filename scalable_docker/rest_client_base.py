@@ -64,10 +64,20 @@ class AsyncJsonRESTClient:
         return f"{self.server_url}/process"
 
     async def call_server(self, request_timeout_seconds: float | int | None = None, **kwargs) -> Any:
+        if request_timeout_seconds is not None:
+            try:
+                return await asyncio.wait_for(
+                    self.call_server(**kwargs),
+                    timeout=request_timeout_seconds,
+                )
+            except asyncio.TimeoutException as e:
+                return {"error": f"Request to server timed out after {request_timeout_seconds} seconds."}
+            
+        
         for i_retry in range(self.max_retries):
             try:
                 async with aiohttp.ClientSession(
-                    timeout=aiohttp.ClientTimeout(total=request_timeout_seconds)
+                    timeout=aiohttp.ClientTimeout(total=None)
                 ) as session:
                     async with session.post(
                         self.endpoint,
