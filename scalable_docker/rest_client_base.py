@@ -63,7 +63,7 @@ class AsyncJsonRESTClient:
         self.lock = asyncio.Lock()
 
     async def ensure_session(self) -> None:
-        with self.lock:
+        async with self.lock:
             if self.session is None:
                 self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=None))
 
