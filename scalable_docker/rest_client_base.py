@@ -84,7 +84,7 @@ class AsyncJsonRESTClient:
                     self.call_server(**kwargs),
                     timeout=request_timeout_seconds,
                 )
-            except asyncio.TimeoutException as e:
+            except asyncio.TimeoutError as e:
                 print(f"Done calling server {id} timed out")
                 return {"error": f"Request to server timed out after {request_timeout_seconds} seconds."}
             
