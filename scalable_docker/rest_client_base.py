@@ -76,7 +76,7 @@ class AsyncJsonRESTClient:
         
         print(f"Calling server {id}")
 
-        self.ensure_session()
+        await self.ensure_session()
         
         if request_timeout_seconds is not None:
             try:
