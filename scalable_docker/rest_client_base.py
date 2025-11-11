@@ -59,6 +59,13 @@ class AsyncJsonRESTClient:
         self.server_url = server_url
         self.max_retries = max_retries
         self.wait_before_retrying_seconds = wait_before_retrying_seconds
+        self.session = None
+        self.lock = asyncio.Lock()
+
+    async def ensure_session(self) -> None:
+        with self.lock:
+            if self.session is None:
+                self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=None))
 
     @property
     def endpoint(self):
@@ -69,6 +76,8 @@ class AsyncJsonRESTClient:
         
         print(f"Calling server {id}")
 
+        self.ensure_session()
+        
         if request_timeout_seconds is not None:
             try:
                 return await asyncio.wait_for(
@@ -82,27 +91,24 @@ class AsyncJsonRESTClient:
         
         for i_retry in range(self.max_retries):
             try:
-                async with aiohttp.ClientSession(
-                    timeout=aiohttp.ClientTimeout(total=None)
-                ) as session:
-                    async with session.post(
-                        self.endpoint,
-                        json=kwargs,
-                        headers={"Content-Type": "application/json"},
-                    ) as response:
-                        try:
-                            parsed_response = await response.json()
-                        except aiohttp.ContentTypeError:
-                            parsed_response = None
+                async with self.session.post(
+                    self.endpoint,
+                    json=kwargs,
+                    headers={"Content-Type": "application/json"},
+                ) as response:
+                    try:
+                        parsed_response = await response.json()
+                    except aiohttp.ContentTypeError:
+                        parsed_response = None
 
-                        if response.status != 200:
-                            print(f"Done calling server {id} bad status")
-                            return {
-                                "error": f"Error communicating with server.\nStatus code: {response.status}.\nResponse json: {parsed_response}"
-                            }
-
-                        print(f"Done calling server {id} succecss")
-                        return parsed_response
+                    if response.status != 200:
+                        print(f"Done calling server {id} bad status")
+                        return {
+                            "error": f"Error communicating with server.\nStatus code: {response.status}.\nResponse json: {parsed_response}"
+                        }
+                        
+                    print(f"Done calling server {id} succecss")
+                    return parsed_response
             except aiohttp.ClientConnectorError as e:
                 print(
                     f"Call to server failed on attempt {i_retry + 1}/{self.max_retries}"
