@@ -255,7 +255,7 @@ class WorkerServer(JsonRESTServer):
         )
 
         print(f"{len(command)=}", flush=True)
-        command = command[:65536]
+        command = command[:32768]
 
         try:
             output = run(
