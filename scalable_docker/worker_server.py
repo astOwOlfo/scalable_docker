@@ -255,6 +255,7 @@ class WorkerServer(JsonRESTServer):
         )
 
         print(f"{len(command)=}", flush=True)
+        command = command[:65536]
 
         try:
             output = run(
