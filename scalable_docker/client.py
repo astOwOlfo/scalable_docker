@@ -138,6 +138,7 @@ class ScalableDockerClient(AsyncJsonRESTClient):
         container: Container,
         commands: list[str],
         timeout: MultiCommandTimeout,
+        blocking: bool = False,
     ) -> list[ProcessOutput]:
         response = await self.call_server(
             function="run_commands",
@@ -147,6 +148,7 @@ class ScalableDockerClient(AsyncJsonRESTClient):
             total_timeout_seconds=timeout.seconds_per_command,
             per_command_timeout_seconds=timeout.total_seconds,
             request_timeout_seconds=4 * timeout.total_seconds,
+            blocking=blocking,
         )
 
         if self.is_error(response):

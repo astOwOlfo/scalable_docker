@@ -294,6 +294,7 @@ class HeadServer(JsonRESTServer):
         commands: list[str],
         total_timeout_seconds: float | int,
         per_command_timeout_seconds: float | int,
+        blocking: bool,
     ) -> Any:
         worker = self.workers[container["worker_index"]]
 
@@ -307,6 +308,7 @@ class HeadServer(JsonRESTServer):
             commands=commands,
             total_timeout_seconds=total_timeout_seconds,
             per_command_timeout_seconds=per_command_timeout_seconds,
+            blocking=blocking,
         )
 
         if self.is_error(response):

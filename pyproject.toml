@@ -10,6 +10,7 @@ dependencies = [
     "flask>=3.1.0",
     "more-itertools>=10.7.0",
     "pyyaml>=6.0.2",
+    "readerwriterlock>=1.0.9",
     "requests>=2.32.3",
     "tqdm>=4.67.1",
     "waitress>=3.0.2",

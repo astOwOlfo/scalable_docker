@@ -7,6 +7,7 @@ from shutil import rmtree
 import yaml
 from time import perf_counter
 from subprocess import run, PIPE, TimeoutExpired, Popen
+from readerwriterlock.rwlock import RWLockFair
 from more_itertools import chunked
 from dataclasses import asdict
 from collections.abc import Callable, Iterable
@@ -36,6 +37,7 @@ class WorkerServer(JsonRESTServer):
     built_dockerfile_contents: dict[str, list[str]]
     running_containers: dict[str, list[Container]]
     destroy_sandboxes_processes: dict[str, Popen]
+    run_commands_lock: RWLockFair
 
     def __init__(
         self,
@@ -48,6 +50,7 @@ class WorkerServer(JsonRESTServer):
         self.built_dockerfile_contents = {}
         self.running_containers = {}
         self.destroy_sandboxes_processes = {}
+        self.run_commands_lock = RWLockFair()
 
     def working_directory(self, key: str) -> str:
         return path.join(self.root_working_directory, key)
@@ -290,30 +293,30 @@ class WorkerServer(JsonRESTServer):
         commands: list[str],
         total_timeout_seconds: float | int,
         per_command_timeout_seconds: float | int,
+        blocking: bool,
     ) -> list[dict]:
-        start_time = perf_counter()
+        with self.run_commands_lock.gen_wlock() if blocking else self.run_commands_lock.gen_rlock():
+            start_time = perf_counter()
 
-        outputs: list[ProcessOutput] = []
+            outputs: list[ProcessOutput] = []
 
-        for command in commands:
-            time_spent_so_far = perf_counter() - start_time
-            remaining_time = total_timeout_seconds - time_spent_so_far
-            if remaining_time <= 0:
-                outputs.append(
-                    TIMED_OUT_PROCESS_OUTPUT
+            for command in commands:
+                time_spent_so_far = perf_counter() - start_time
+                remaining_time = total_timeout_seconds - time_spent_so_far
+                if remaining_time <= 0:
+                    outputs.append(TIMED_OUT_PROCESS_OUTPUT)
+                    continue
+
+                output = self.run_single_command(
+                    key=key,
+                    container=container,
+                    command=command,
+                    timeout_seconds=min(per_command_timeout_seconds, remaining_time),
                 )
-                continue
 
-            output = self.run_single_command(
-                key=key,
-                container=container,
-                command=command,
-                timeout_seconds=min(per_command_timeout_seconds, remaining_time),
-            )
+                outputs.append(output)
 
-            outputs.append(output)
-
-        return [asdict(output) for output in outputs]
+            return [asdict(output) for output in outputs]
 
 
 @beartype
@@ -360,4 +363,3 @@ def main_cli() -> None:
 
 if __name__ == "__main__":
     main_cli()
- 
