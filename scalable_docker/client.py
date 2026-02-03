@@ -199,19 +199,6 @@ async def push_image(dockerfile_content: str) -> None:
         "docker", "push", f"ghcr.io/astowolfo/{image_name(dockerfile_content)}:latest"
     )
 
-    await asyncio.sleep(10.0)
-
-    # make it public
-    await run_command(
-        "gh",
-        "api",
-        "--method",
-        "PATCH",
-        f"/user/packages/container/{image_name(dockerfile_content)}",
-        "-f",
-        "visibility=public",
-    )
-
 
 @beartype
 async def image_already_pushed(dockerfile_content: str) -> bool:
