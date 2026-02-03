@@ -1,6 +1,6 @@
 from hashlib import sha256
 from uuid import uuid4
-from time import perf_counter
+from tempfile import NamedTemporaryFile
 import json
 import base64
 import subprocess
@@ -130,7 +130,7 @@ async def create_kubernetes_cluster_with_civo(
         "--wait",
     )
     await run_command(
-        "civo", "kubernetes", "config", cluster_name, "--save", "--switch"
+        "civo", "kubernetes", "config", cluster_name, "--save", "--save"
     )
 
 
@@ -307,7 +307,14 @@ class ScalableDockerClient:
 
     async def run_single_command(
         self, container: Container, timeout_seconds: int
-    ) -> ProcessOutput: ...
+    ) -> tuple[ProcessOutput, float]:
+        with NamedTemporaryFile(delete=False) as tf:
+            time_file = tf.name
+
+        try:
+            output = await run_command("")
+        finally:
+            os.unlink(time_file)
 
     async def run_commands(
         self,
