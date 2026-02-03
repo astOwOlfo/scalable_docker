@@ -240,6 +240,16 @@ async def create_kubernetes_deployment(
 async def delete_kubernetes_deployment(deployment_name: str) -> None:
     await run_command("kubectl", "delete", "deployment", deployment_name, "--wait")
 
+    await run_command(
+        "kubectl",
+        "wait",
+        "--for=delete",
+        "pod",
+        "-l",
+        f"app={deployment_name}",
+        "--timeout=120s",
+    )
+
 
 async def get_all_kubernetes_deployment_names() -> list[str]:
     output = await run_command("kubectl", "get", "deployments", "-o", "json")
