@@ -128,6 +128,7 @@ async def create_kubernetes_cluster_with_civo(
         "--size",
         instance_type,
         "--wait",
+        "--save",
     )
     await run_command("civo", "kubernetes", "config", cluster_name, "--save", "--save")
 
@@ -197,6 +198,16 @@ async def build_image(dockerfile_content: str) -> None:
 async def push_image(dockerfile_content: str) -> None:
     await run_command(
         "docker", "push", f"ghcr.io/astowolfo/{image_name(dockerfile_content)}:latest"
+    )
+
+    # make it public
+    await run_command(
+        "gh",
+        "api",
+        "--method",
+        "PATCH",
+        f"/user/packages/container/{image_name(dockerfile_content)}/visibility",
+        "visibility=public",
     )
 
 
