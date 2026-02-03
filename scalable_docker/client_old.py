@@ -190,14 +190,16 @@ async def build_image(dockerfile_content: str) -> None:
         "docker",
         "build",
         "-t",
-        f"ghcr.io/astOwOlfo/{image_name(dockerfile_content)}:latest",
+        f"localhost:5000/{image_name(dockerfile_content)}:latest",
         dir,
     )
 
 
 @beartype
 async def push_image(dockerfile_content) -> None:
-    await run_command("docker", "push", f"{image_name(dockerfile_content)}:latest")
+    await run_command(
+        "docker", "push", f"localhost:5000/{image_name(dockerfile_content)}:latest"
+    )
 
 
 @beartype
@@ -209,7 +211,7 @@ async def create_kubernetes_deployment(
         "create",
         "deployment",
         deployment_name,
-        f"--image=ghcr.io/astOwOlfo/{image_name(dockerfile_content)}:latest",
+        f"--image=registry:5000/{image_name(dockerfile_content)}:latest",
     )
 
 
@@ -327,7 +329,9 @@ class ScalableDockerClient:
         async with self.lock:
             self.deployment_is_ready[container.index] = True
 
-        return [await self.run_single_command()]
+        return [
+            await self.run_single_command()
+        ]
 
 
 @beartype
