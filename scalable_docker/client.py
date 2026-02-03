@@ -110,7 +110,7 @@ async def install_civo() -> None:
 
 
 @beartype
-async def create_kubernetes_cluster(
+async def create_kubernetes_cluster_with_civo(
     n_nodes: int, instance_type: str = "g4s.kube.large"
 ) -> None:
     await run_command(
