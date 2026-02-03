@@ -195,7 +195,9 @@ async def build_image(dockerfile_content: str) -> None:
 
 @beartype
 async def push_image(dockerfile_content) -> None:
-    await run_command("docker", "push", f"ghcr.io/astowolfo/{image_name(dockerfile_content)}:latest")
+    await run_command(
+        "docker", "push", f"ghcr.io/astowolfo/{image_name(dockerfile_content)}:latest"
+    )
 
 
 @beartype
@@ -324,9 +326,15 @@ class ScalableDockerClient:
         assert self.stage in ["starting", "running"], (
             "you must call start_containers before calling start_destroying_containers"
         )
+
+        async def workload() -> None:
+            await asyncio.gather(
+                *[delete_kubernetes_deployment(name) for name in self.deployment_names]
+            )
+
         async with self.lock:
             self.stage = "stopping"
-            self.stop_task = asynco.Task()
+            self.stop_task = asyncio.create_task(workload())
 
     async def run_single_command(
         self, command: str, container: Container, timeout_seconds: float
