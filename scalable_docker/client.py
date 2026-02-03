@@ -103,6 +103,20 @@ async def install_civo() -> None:
     # TODO: finish installing
 
 
+async def create_kubernetes_secret(github_token: str) -> None:
+    await run_command(
+        "kubectl",
+        "create",
+        "secret",
+        "docker-registry",
+        "ghcr-secret",
+        "--docker-server=ghcr.io",
+        "--docker-username=astowolfo",
+        f"--docker-password={github_token}",
+        "--docker-email=volodimir1024@gmail.com",
+    )
+
+
 async def create_kubernetes_cluster_with_civo(
     n_nodes: int,
     instance_type: str = "g4s.kube.large",
