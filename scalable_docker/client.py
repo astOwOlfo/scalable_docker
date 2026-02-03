@@ -149,8 +149,17 @@ async def create_in_clustetr_docker_registry() -> None:
         "--image=registry:2",
         "--port=5000",
     )
+    # await run_command(
+    #     "kubectl", "expose", "deployment", "registry", "--port=5000", "--type=ClusterIP"
+    # )
     await run_command(
-        "kubectl", "expose", "deployment", "registry", "--port=5000", "--type=ClusterIP"
+        "kubectl",
+        "expose",
+        "deployment",
+        "registry",
+        "--port=5000",
+        "--type=NodePort",
+        "--name=registry-np",
     )
     await asyncio.sleep(10.0)
     subprocess.Popen(
@@ -230,6 +239,19 @@ async def delete_all_scalable_docker_kubernetes_deployments() -> None:
 
 
 @beartype
+async def wait_for_deployment_ready(
+    deployment_name: str, timeout_seconds: int = 3600
+) -> None:
+    await run_command(
+        "kubectl",
+        "wait",
+        "--for=condition=Ready",
+        f"pod/{deployment_name}",
+        f"--timeout={timeout_seconds}s",
+    )
+
+
+@beartype
 def random_deployment_name() -> str:
     return f"deployment-{uuid4()}"
 
@@ -239,6 +261,8 @@ def random_deployment_name() -> str:
 class ScalableDockerClient:
     containers: list[Container] = field(init=False)
     deployment_names: list[str] = field(init=False)
+    deployment_is_ready: list[bool] = field(init=False)
+    lock: asyncio.Lock = asyncio.Lock()
 
     async def docker_prune_everything(self) -> Any:
         raise NotImplementedError()
@@ -275,6 +299,7 @@ class ScalableDockerClient:
             Container(dockerfile_content=dockerfile_content, index=i, worker_index=-1)
             for i, dockerfile_content in enumerate(dockerfile_contents)
         ]
+        self.deployment_is_ready = [False] * len(dockerfile_contents)
 
         return self.containers
 
@@ -286,7 +311,14 @@ class ScalableDockerClient:
         commands: list[str],
         timeout: MultiCommandTimeout,
         blocking: bool = False,
-    ) -> list[ProcessOutput]: ...
+    ) -> list[ProcessOutput]:
+        deployment_name: str = self.deployment_names[container.index]
+
+        if not self.deployment_is_ready[container.index]:
+            await wait_for_deployment_ready(deployment_name)
+
+        async with self.lock:
+            self.deployment_is_ready[container.index] = True
 
 
 @beartype
