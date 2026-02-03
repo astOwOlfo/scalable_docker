@@ -1,11 +1,15 @@
+from hashlib import sha256
+import json
 import base64
-from shlex import quote
+import subprocess
+from tqdm import tqdm
+from os import makedirs
 import os
-from dataclasses import dataclass, asdict
+from shlex import quote
+import asyncio
+from dataclasses import asdict, dataclass
 from typing import Any
 from beartype import beartype
-
-from scalable_docker.rest_client_base import AsyncJsonRESTClient
 
 
 @beartype
@@ -49,89 +53,121 @@ TIMED_OUT_PROCESS_OUTPUT = ProcessOutput(exit_code=1, stdout="", stderr="timed o
 
 
 @beartype
-class ScalableDockerClient(AsyncJsonRESTClient):
-    key: str
+async def run_command(*command: str, assert_success: bool = True) -> ProcessOutput:
+    process = await asyncio.create_subprocess_exec(
+        *command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
+    stdout, stderr = await process.communicate()
+    assert process.returncode is not None
+    if assert_success and process.returncode != 0:
+        raise RuntimeError(
+            f"Command {command} failed. Exit code: {process.returncode}\nSTDOUT: {stdout.decode(errors='replace')}\nSTDERR: {stderr.decode(errors='replace')}"
+        )
+    return ProcessOutput(
+        exit_code=process.returncode,
+        stdout=stdout.decode(errors="ignore"),
+        stderr=stderr.decode(errors="ignore"),
+    )
 
-    def __init__(
-        self, *args, key: str, server_url: str | None = None, **kwargs
-    ) -> None:
-        if server_url is None:
-            server_url = os.environ.get("SCALABLE_DOCKER_SERVER_URL")
 
-        if server_url is None:
-            raise ValueError(
-                "A sever url must be provided to RemoteDockerSandbox, either by passing a `server_url` argument to its constructor or by setting the `SCALABLE_DOCKER_SERVER_URL` system variable."
-            )
+@beartype
+async def install_civo() -> None:
+    already_installed: bool = (
+        await run_command("civo", "--version", assert_success=False)
+    ).exit_code == 0
+    if already_installed:
+        return
 
-        super().__init__(*args, server_url=server_url, **kwargs)
+    install_command_output = await run_command(
+        "bash", "-c", "curl -sL https://civo.com/get | sh"
+    )
+    print(
+        "INSTALL COMMAND OUTPUT:",
+        install_command_output.stdout + install_command_output.stderr,
+    )
+    # TODO: finish installing
 
-        self.key = key
 
-    def is_error(self, server_response: Any) -> bool:
-        return isinstance(server_response, dict) and "error" in server_response.keys()
+@beartype
+async def create_kubernetes_cluster(
+    n_nodes: int, instance_type: str = "g4s.kube.large"
+) -> None:
+    await run_command(
+        "civo",
+        "kubernetes",
+        "create my-k8s-cluster",
+        "--nodes",
+        str(n_nodes),
+        "--size",
+        instance_type,
+        "--wait",
+    )
 
+
+@beartype
+async def create_in_clustetr_docker_registry() -> None:
+    await run_command(
+        "kubectl",
+        "create",
+        "deployment",
+        "registry",
+        "--image=registry:2",
+        "--port=5000",
+    )
+    await run_command(
+        "kubectl", "expose", "deployment", "registry", "--port=5000", "--type=ClusterIP"
+    )
+    await asyncio.sleep(10.0)
+    subprocess.Popen(
+        ["kubectl", "port-forward", "svc/registry", "5000:5000"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        stdin=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+
+def image_name(image: Image) -> str:
+    hash: str = sha256(json.dumps(asdict(image)).encode()).hexdigest()
+    return f"image-{hash}"
+
+
+@beartype
+async def build_image(image: Image) -> None:
+    dir: str = os.path.abspath(os.path.join("dockerfiles", image_name(image)))
+    makedirs(dir, exist_ok=True)
+    with open(os.path.join(dir, "Dockerfile"), "w") as f:
+        f.write(image.dockerfile_content)
+    await run_command(
+        "docker", "build", "-t", f"localhost:5000/{image_name(image)}:latest", dir
+    )
+
+
+@beartype
+async def push_image(image: Image) -> None:
+    await run_command("docker", "push", f"localhost:5000/{image_name(image)}:latest")
+
+
+@beartype
+@dataclass(frozen=True, slots=True)
+class ScalableDockerClient:
     async def docker_prune_everything(self) -> Any:
-        print("Pruning docker images...")
-
-        response = await self.call_server(function="docker_prune_everything")
-
-        if self.is_error(response):
-            raise ScalableDockerServerError(response)
-
-        print("Done pruning!")
+        raise NotImplementedError()
 
     async def build_images(
         self,
         images: list[Image],
         batch_size: int | None = None,
-        max_attempts: int = 1,
-        workers_per_dockerfile: int | None = None,
-        ignore_errors: bool = False,
     ) -> None:
-        print(f"Building {len(images)} images...")
+        for image in tqdm(images, desc="building images"):
+            await build_image(image)
+            await push_image(image)
 
-        response = await self.call_server(
-            function="build_images",
-            key=self.key,
-            images=[asdict(image) for image in images],
-            batch_size=batch_size,
-            max_attempts=max_attempts,
-            workers_per_dockerfile=workers_per_dockerfile,
-            ignore_errors=ignore_errors,
-        )
+    async def start_containers(
+        self, dockerfile_contents: list[str]
+    ) -> list[Container]: ...
 
-        if self.is_error(response):
-            raise ScalableDockerServerError(response)
-
-        print("Done building images!")
-
-    async def number_healthy_workers(self) -> int:
-        response = await self.call_server(function="number_healthy_workers")
-
-        if self.is_error(response):
-            raise ScalableDockerServerError(response)
-
-        return response
-
-    async def start_containers(self, dockerfile_contents: list[str]) -> list[Container]:
-        response = await self.call_server(
-            function="start_containers",
-            key=self.key,
-            dockerfile_contents=dockerfile_contents,
-        )
-
-        if self.is_error(response):
-            raise ScalableDockerServerError(response)
-
-        return [Container(**container) for container in response]
-
-    async def start_destroying_containers(self) -> None:
-        response = await self.call_server(
-            key=self.key, function="start_destroying_containers"
-        )
-
-        if self.is_error(response):
-            raise ScalableDockerServerError(response)
+    async def start_destroying_containers(self) -> None: ...
 
     async def run_commands(
         self,
@@ -139,22 +175,7 @@ class ScalableDockerClient(AsyncJsonRESTClient):
         commands: list[str],
         timeout: MultiCommandTimeout,
         blocking: bool = False,
-    ) -> list[ProcessOutput]:
-        response = await self.call_server(
-            function="run_commands",
-            key=self.key,
-            container=asdict(container),
-            commands=commands,
-            total_timeout_seconds=timeout.seconds_per_command,
-            per_command_timeout_seconds=timeout.total_seconds,
-            request_timeout_seconds=4 * timeout.total_seconds,
-            blocking=blocking,
-        )
-
-        if self.is_error(response):
-            raise ScalableDockerServerError(response)
-
-        return [ProcessOutput(**output) for output in response]
+    ) -> list[ProcessOutput]: ...
 
 
 @beartype
