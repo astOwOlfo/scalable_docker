@@ -30,7 +30,7 @@ async def main() -> None:
     ]
     images = images[:64]
     client = ScalableDockerClient(key="")
-    await client.build_images(images)
+    await client.build_images(images, batch_size=1)
     containers: list[Container] = await client.start_containers(
         [image.dockerfile_content for image in images]
     )
