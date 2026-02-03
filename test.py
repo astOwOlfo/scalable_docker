@@ -28,6 +28,7 @@ async def main() -> None:
         for line in open("final-hard.jsonl")
         if line.strip() and not line.startswith("#")
     ]
+    images = images[:64]
     client = ScalableDockerClient()
     await client.build_images(images)
     containers: list[Container] = await client.start_containers(
