@@ -211,7 +211,7 @@ async def delete_kubernetes_deployment(deployment_name: str) -> None:
 
 @beartype
 async def get_all_kubernetes_deployment_names() -> list[str]:
-    output = await run_command("kubernetes", "get", "deployments", "-o", "json")
+    output = await run_command("kubectl", "get", "deployments", "-o", "json")
     json_output = json.loads(output.stdout)
     names = [deployment["metadata"]["name"] for deployment in json_output["items"]]
     assert all(isinstance(name, str) for name in names)
