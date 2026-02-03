@@ -11,10 +11,8 @@ from shlex import quote
 import asyncio
 from dataclasses import dataclass, field
 from typing import Any, Literal
-from beartype import beartype
 
 
-@beartype
 @dataclass(frozen=True, slots=True)
 class ProcessOutput:
     exit_code: int
@@ -22,7 +20,6 @@ class ProcessOutput:
     stderr: str
 
 
-@beartype
 @dataclass(frozen=True, slots=True)
 class Image:
     dockerfile_content: str
@@ -30,7 +27,6 @@ class Image:
     max_memory_gigabytes: float | int = 1.0
 
 
-@beartype
 @dataclass(frozen=True, slots=True)
 class Container:
     dockerfile_content: str
@@ -38,13 +34,11 @@ class Container:
     worker_index: int
 
 
-@beartype
 @dataclass(frozen=True, slots=True)
 class ScalableDockerServerError(Exception):
     server_response: Any
 
 
-@beartype
 @dataclass(frozen=True, slots=True)
 class MultiCommandTimeout:
     seconds_per_command: int | float
@@ -54,7 +48,6 @@ class MultiCommandTimeout:
 TIMED_OUT_PROCESS_OUTPUT = ProcessOutput(exit_code=124, stdout="", stderr="timed out")
 
 
-@beartype
 async def run_command(*command: str, assert_success: bool = True) -> ProcessOutput:
     process = await asyncio.create_subprocess_exec(
         *command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
@@ -72,7 +65,6 @@ async def run_command(*command: str, assert_success: bool = True) -> ProcessOutp
     )
 
 
-@beartype
 async def install_kubectl() -> None:
     await run_command(
         "bash",
@@ -86,7 +78,6 @@ sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl""",
     exit()
 
 
-@beartype
 async def install_docker() -> None:
     await run_command(
         "bash",
@@ -95,7 +86,6 @@ async def install_docker() -> None:
     )
 
 
-@beartype
 async def install_civo() -> None:
     already_installed: bool = (
         await run_command("civo", "--version", assert_success=False)
@@ -113,7 +103,6 @@ async def install_civo() -> None:
     # TODO: finish installing
 
 
-@beartype
 async def create_kubernetes_cluster_with_civo(
     n_nodes: int,
     instance_type: str = "g4s.kube.large",
@@ -133,14 +122,12 @@ async def create_kubernetes_cluster_with_civo(
     await run_command("civo", "kubernetes", "config", cluster_name, "--save")
 
 
-@beartype
 async def delete_kubernetes_cluster_with_civo(
     cluster_name: str = "my-k8s-cluster",
 ) -> None:
     await run_command("civo", "kubernetes", "delete", cluster_name, "-y")
 
 
-@beartype
 async def create_in_clustetr_docker_registry() -> None:
     await run_command(
         "kubectl",
@@ -177,7 +164,6 @@ def image_name(dockerfile_content: str) -> str:
     return f"image-{hash[:32]}"
 
 
-@beartype
 async def build_image(dockerfile_content: str) -> None:
     dir: str = os.path.abspath(
         os.path.join("dockerfiles", image_name(dockerfile_content))
@@ -194,14 +180,12 @@ async def build_image(dockerfile_content: str) -> None:
     )
 
 
-@beartype
 async def push_image(dockerfile_content: str) -> None:
     await run_command(
         "docker", "push", f"ghcr.io/astowolfo/{image_name(dockerfile_content)}:latest"
     )
 
 
-@beartype
 async def image_already_pushed(dockerfile_content: str) -> bool:
     output = await run_command(
         "docker",
@@ -213,7 +197,6 @@ async def image_already_pushed(dockerfile_content: str) -> bool:
     return output.exit_code == 0
 
 
-@beartype
 async def create_kubernetes_deployment(
     deployment_name: str, dockerfile_content: str
 ) -> None:
@@ -239,12 +222,10 @@ async def create_kubernetes_deployment(
     )
 
 
-@beartype
 async def delete_kubernetes_deployment(deployment_name: str) -> None:
     await run_command("kubectl", "delete", "deployment", deployment_name)
 
 
-@beartype
 async def get_all_kubernetes_deployment_names() -> list[str]:
     output = await run_command("kubectl", "get", "deployments", "-o", "json")
     json_output = json.loads(output.stdout)
@@ -253,7 +234,6 @@ async def get_all_kubernetes_deployment_names() -> list[str]:
     return names
 
 
-@beartype
 async def delete_all_scalable_docker_kubernetes_deployments() -> None:
     deployment_names: list[str] = await get_all_kubernetes_deployment_names()
     deployment_names = [
@@ -264,7 +244,6 @@ async def delete_all_scalable_docker_kubernetes_deployments() -> None:
     )
 
 
-@beartype
 async def wait_for_deployment_ready(
     deployment_name: str, timeout_seconds: int = 3600
 ) -> None:
@@ -277,12 +256,10 @@ async def wait_for_deployment_ready(
     )
 
 
-@beartype
 def random_deployment_name() -> str:
     return f"deployment-{uuid4()}"
 
 
-@beartype
 @dataclass(slots=True)
 class ScalableDockerClient:
     key: str
@@ -460,7 +437,6 @@ class ScalableDockerClient:
         return outputs
 
 
-@beartype
 def upload_file_command(filename: str, content: str) -> str:
     encoded_data = base64.b64encode(content.encode()).decode()
     return f"echo {encoded_data} | base64 -d > {quote(filename)}"
