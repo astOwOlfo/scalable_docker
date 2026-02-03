@@ -222,6 +222,8 @@ async def create_kubernetes_deployment(
         "deployment",
         deployment_name,
         f"--image=ghcr.io/astowolfo/{image_name(dockerfile_content)}:latest",
+        "-p",
+        '{"spec":{"template":{"spec":{"imagePullSecrets":[{"name":"ghcr-secret"}]}}}}',
     )
 
 
