@@ -4,7 +4,7 @@ from time import perf_counter
 import json
 import base64
 import subprocess
-from tqdm import tqdm
+from tqdm.asyncio import tqdm as tqdm_asyncio
 from os import makedirs
 import os
 from shlex import quote
@@ -194,10 +194,22 @@ async def build_image(dockerfile_content: str) -> None:
 
 
 @beartype
-async def push_image(dockerfile_content) -> None:
+async def push_image(dockerfile_content: str) -> None:
     await run_command(
         "docker", "push", f"ghcr.io/astowolfo/{image_name(dockerfile_content)}:latest"
     )
+
+
+@beartype
+async def image_already_pushed(dockerfile_content: str) -> bool:
+    output = await run_command(
+        "docker",
+        "manifest",
+        "inspect",
+        image_name(dockerfile_content),
+        assert_success=False,
+    )
+    return output.exit_code == 0
 
 
 @beartype
@@ -277,10 +289,37 @@ class ScalableDockerClient:
     ) -> None:
         if max_retries != 1:
             raise NotImplementedError("max_retries != 1 is not supported")
+
         dockerfile_contents = set(image.dockerfile_content for image in images)
-        for dockerfile_content in tqdm(dockerfile_contents, desc="building images"):
+
+        already_pushed: list[bool] = await asyncio.gather(
+            *[
+                image_already_pushed(image_name(dockerfile_content))
+                for dockerfile_content in dockerfile_contents
+            ]
+        )
+
+        dockerfile_contents = [
+            dockerfile_content
+            for dockerfile_content, pushed in zip(dockerfile_contents, already_pushed)
+            if not pushed
+        ]
+
+        if len(dockerfile_contents) == 0:
+            return
+
+        async def build_and_push_image(dockerfile_content: str) -> None:
             await build_image(dockerfile_content)
             await push_image(dockerfile_content)
+
+        await asyncio_gather_max_parallels(
+            *[
+                build_and_push_image(dockerfile_content)
+                for dockerfile_content in dockerfile_contents
+            ],
+            max_parallels=batch_size,
+            progress_bar_description="building images",
+        )
 
     async def start_containers(self, dockerfile_contents: list[str]) -> list[Container]:
         if self.stage == "running":
@@ -405,3 +444,17 @@ class ScalableDockerClient:
 def upload_file_command(filename: str, content: str) -> str:
     encoded_data = base64.b64encode(content.encode()).decode()
     return f"echo {encoded_data} | base64 -d > {quote(filename)}"
+
+
+async def asyncio_gather_max_parallels(
+    *xs, max_parallels: int, progress_bar_description: str | None = None
+) -> list:
+    semaphore = asyncio.Semaphore(max_parallels)
+
+    async def run_with_semaphore(coro):
+        async with semaphore:
+            return await coro
+
+    wrapped = [run_with_semaphore(coro) for coro in xs]
+
+    return await tqdm_asyncio.gather(*wrapped, desc=progress_bar_description)

@@ -23,7 +23,8 @@ async def main() -> None:
     await delete_all_scalable_docker_kubernetes_deployments()
     images = [Image("FROM ubuntu:latest"), Image("FROM alpine:latest")]
     client = ScalableDockerClient()
-    # await client.build_images(images)
+    await client.build_images(images)
+    return
     containers: list[Container] = await client.start_containers(
         [image.dockerfile_content for image in images]
     )
