@@ -283,6 +283,7 @@ def random_deployment_name() -> str:
 @beartype
 @dataclass(slots=True)
 class ScalableDockerClient:
+    key: str
     containers: list[Container] = field(init=False)
     deployment_names: list[str] = field(init=False)
     deployment_is_ready: list[bool] = field(init=False)

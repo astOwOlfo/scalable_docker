@@ -29,7 +29,7 @@ async def main() -> None:
         if line.strip() and not line.startswith("#")
     ]
     images = images[:64]
-    client = ScalableDockerClient()
+    client = ScalableDockerClient(key="")
     await client.build_images(images)
     containers: list[Container] = await client.start_containers(
         [image.dockerfile_content for image in images]
