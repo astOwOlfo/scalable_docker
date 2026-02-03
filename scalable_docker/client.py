@@ -126,7 +126,9 @@ async def create_kubernetes_cluster_with_civo(
         instance_type,
         "--wait",
     )
-    await run_command("civo", "kubernetes", "config", cluster_name, "--save")
+    await run_command(
+        "civo", "kubernetes", "config", cluster_name, "--save", "--switch"
+    )
 
 
 @beartype
