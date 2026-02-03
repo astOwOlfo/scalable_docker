@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 from hashlib import sha256
 from uuid import uuid4
 from time import perf_counter
@@ -277,12 +278,21 @@ def random_deployment_name() -> str:
 @dataclass(slots=True)
 class ScalableDockerClient:
     key: str
+    max_parallel_commands: int | None = None
+    exec_semaphore: asyncio.Semaphore | None = field(init=False)
     containers: list[Container] = field(init=False)
     deployment_names: list[str] = field(init=False)
     deployment_is_ready: list[bool] = field(init=False)
     lock: asyncio.Lock = field(default_factory=lambda: asyncio.Lock())
     stage: Literal["stopped", "starting", "running", "stopping"] = "stopped"
     stop_task: asyncio.Task = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.exec_semaphore = (
+            asyncio.Semaphore(self.max_parallel_commands)
+            if self.max_parallel_commands is not None
+            else None
+        )
 
     async def docker_prune_everything(self) -> Any:
         raise NotImplementedError()
@@ -432,23 +442,28 @@ class ScalableDockerClient:
         async with self.lock:
             self.deployment_is_ready[container.index] = True
 
-        outputs: list[ProcessOutput] = []
-        start_time = perf_counter()
-        for command in commands:
-            time_spent = perf_counter() - start_time
-            remaining_time = timeout.total_seconds - time_spent
-            if remaining_time <= 0:
-                outputs.append(TIMED_OUT_PROCESS_OUTPUT)
-                continue
-            outputs.append(
-                await self.run_single_command(
-                    command=command,
-                    container=container,
-                    timeout_seconds=min(remaining_time, timeout.seconds_per_command),
+        async with (
+            self.exec_semaphore if self.exec_semaphore is not None else nullcontext()
+        ):
+            outputs: list[ProcessOutput] = []
+            start_time = perf_counter()
+            for command in commands:
+                time_spent = perf_counter() - start_time
+                remaining_time = timeout.total_seconds - time_spent
+                if remaining_time <= 0:
+                    outputs.append(TIMED_OUT_PROCESS_OUTPUT)
+                    continue
+                outputs.append(
+                    await self.run_single_command(
+                        command=command,
+                        container=container,
+                        timeout_seconds=min(
+                            remaining_time, timeout.seconds_per_command
+                        ),
+                    )
                 )
-            )
 
-        return outputs
+            return outputs
 
 
 def upload_file_command(filename: str, content: str) -> str:
