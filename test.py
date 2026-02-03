@@ -1,6 +1,7 @@
 import asyncio
 
 from scalable_docker.client import (
+    MultiCommandTimeout,
     create_in_clustetr_docker_registry,
     ScalableDockerClient,
     Image,
@@ -26,6 +27,14 @@ async def main() -> None:
     containers: list[Container] = await client.start_containers(
         [image.dockerfile_content for image in images]
     )
+    for container in containers:
+        print(
+            "OUTPUT:",
+            await client.run_commands(
+                container, ["ls; whoami; pwd"], MultiCommandTimeout(8, 8)
+            ),
+        )
+    await client.start_destroying_containers()
 
 
 if __name__ == "__main__":
