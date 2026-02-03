@@ -24,7 +24,6 @@ async def main() -> None:
     images = [Image("FROM ubuntu:latest"), Image("FROM alpine:latest")]
     client = ScalableDockerClient()
     await client.build_images(images)
-    return
     containers: list[Container] = await client.start_containers(
         [image.dockerfile_content for image in images]
     )
