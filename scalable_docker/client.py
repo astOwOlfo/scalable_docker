@@ -280,7 +280,7 @@ class ScalableDockerClient:
     containers: list[Container] = field(init=False)
     deployment_names: list[str] = field(init=False)
     deployment_is_ready: list[bool] = field(init=False)
-    lock: asyncio.Lock = asyncio.Lock()
+    lock: asyncio.Lock = field(default_factory=lambda: asyncio.Lock())
     stage: Literal["stopped", "starting", "running", "stopping"] = "stopped"
     stop_task: asyncio.Task = field(init=False)
 
@@ -300,7 +300,7 @@ class ScalableDockerClient:
 
         already_pushed: list[bool] = await asyncio_gather_max_parallels(
             *[
-                image_already_pushed(image_name(dockerfile_content))
+                image_already_pushed(dockerfile_content)
                 for dockerfile_content in dockerfile_contents
             ],
             max_parallels=256,
@@ -407,7 +407,7 @@ class ScalableDockerClient:
             "/bin/bash",
             "-c",
             command,
-            assert_success=True,
+            assert_success=False,
         )
 
     async def run_commands(
