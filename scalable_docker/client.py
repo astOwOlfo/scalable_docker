@@ -1,5 +1,6 @@
 from hashlib import sha256
 from uuid import uuid4
+import json
 import base64
 import subprocess
 from tqdm import tqdm
@@ -206,6 +207,26 @@ async def create_kubernetes_deployment(
 @beartype
 async def delete_kubernetes_deployment(deployment_name: str) -> None:
     await run_command("kubectl", "delete", "deployment", deployment_name)
+
+
+@beartype
+async def get_all_kubernetes_deployment_names() -> list[str]:
+    output = await run_command("kubernetes", "get", "deployments", "-o", "json")
+    json_output = json.loads(output.stdout)
+    names = [deployment["metadata"]["name"] for deployment in json_output["items"]]
+    assert all(isinstance(name, str) for name in names)
+    return names
+
+
+@beartype
+async def delete_all_scalable_docker_kubernetes_deployments() -> None:
+    deployment_names: list[str] = await get_all_kubernetes_deployment_names()
+    deployment_names = [
+        name for name in deployment_names if name.startswith("deployment-")
+    ]
+    await asyncio.gather(
+        *[delete_kubernetes_deployment(name) for name in deployment_names]
+    )
 
 
 @beartype

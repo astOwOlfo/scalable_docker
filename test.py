@@ -5,6 +5,7 @@ from scalable_docker.client import (
     ScalableDockerClient,
     Image,
     create_kubernetes_cluster_with_civo,
+    delete_all_scalable_docker_kubernetes_deployments,
     install_docker,
     install_kubectl,
     Container,
@@ -16,6 +17,8 @@ async def main() -> None:
     # await install_kubectl()
     # await create_kubernetes_cluster_with_civo(n_nodes=4)
     # await create_in_clustetr_docker_registry()
+    await delete_all_scalable_docker_kubernetes_deployments()
+    exit()
     images = [Image("FROM ubuntu:latest"), Image("FROM alpine:latest")]
     client = ScalableDockerClient()
     await client.build_images(images)
