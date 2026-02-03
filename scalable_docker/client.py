@@ -163,7 +163,7 @@ async def create_in_clustetr_docker_registry() -> None:
     )
     await asyncio.sleep(10.0)
     subprocess.Popen(
-        ["kubectl", "port-forward", "svc/registry", "5000:5000"],
+        ["kubectl", "port-forward", "svc/registry-np", "5000:5000"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         stdin=subprocess.DEVNULL,
