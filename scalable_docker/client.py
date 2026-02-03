@@ -188,7 +188,7 @@ async def build_image(dockerfile_content: str) -> None:
         "docker",
         "build",
         "-t",
-        f"ghcr.io/astOwOlfo/{image_name(dockerfile_content)}:latest",
+        f"ghcr.io/astowolfo/{image_name(dockerfile_content)}:latest",
         dir,
     )
 
@@ -207,7 +207,7 @@ async def create_kubernetes_deployment(
         "create",
         "deployment",
         deployment_name,
-        f"--image=ghcr.io/astOwOlfo/{image_name(dockerfile_content)}:latest",
+        f"--image=ghcr.io/astowolfo/{image_name(dockerfile_content)}:latest",
     )
 
 
