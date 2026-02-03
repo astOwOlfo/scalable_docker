@@ -78,6 +78,8 @@ async def install_kubectl() -> None:
         """curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
 sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl""",
     )
+    print("INSTALLED DOCKER. PLEASE RESTART THE TERMINAL. EXITING")
+    exit()
 
 
 @beartype
@@ -146,25 +148,33 @@ async def create_in_clustetr_docker_registry() -> None:
     )
 
 
-def image_name(image: Image) -> str:
-    hash: str = sha256(json.dumps(asdict(image)).encode()).hexdigest()
+def image_name(dockerfile_content: str) -> str:
+    hash: str = sha256(dockerfile_content.encode()).hexdigest()
     return f"image-{hash}"
 
 
 @beartype
-async def build_image(image: Image) -> None:
-    dir: str = os.path.abspath(os.path.join("dockerfiles", image_name(image)))
+async def build_image(dockerfile_content: str) -> None:
+    dir: str = os.path.abspath(
+        os.path.join("dockerfiles", image_name(dockerfile_content))
+    )
     makedirs(dir, exist_ok=True)
     with open(os.path.join(dir, "Dockerfile"), "w") as f:
-        f.write(image.dockerfile_content)
+        f.write(dockerfile_content)
     await run_command(
-        "docker", "build", "-t", f"localhost:5000/{image_name(image)}:latest", dir
+        "docker",
+        "build",
+        "-t",
+        f"localhost:5000/{image_name(dockerfile_content)}:latest",
+        dir,
     )
 
 
 @beartype
-async def push_image(image: Image) -> None:
-    await run_command("docker", "push", f"localhost:5000/{image_name(image)}:latest")
+async def push_image(dockerfile_content) -> None:
+    await run_command(
+        "docker", "push", f"localhost:5000/{image_name(dockerfile_content)}:latest"
+    )
 
 
 @beartype
@@ -177,10 +187,14 @@ class ScalableDockerClient:
         self,
         images: list[Image],
         batch_size: int | None = None,
+        max_retries: int = 1,
     ) -> None:
-        for image in tqdm(images, desc="building images"):
-            await build_image(image)
-            await push_image(image)
+        if max_retries != 1:
+            raise NotImplementedError("max_retries != 1 is not supported")
+        dockerfile_contents = set(image.dockerfile_content for image in images)
+        for dockerfile_content in tqdm(dockerfile_contents, desc="building images"):
+            await build_image(dockerfile_content)
+            await push_image(dockerfile_content)
 
     async def start_containers(
         self, dockerfile_contents: list[str]

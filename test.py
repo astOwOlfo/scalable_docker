@@ -10,7 +10,7 @@ from scalable_docker.client import (
 
 
 async def main() -> None:
-    await install_docker()
+    # await install_docker()
     # await install_kubectl()
     await create_in_clustetr_docker_registry()
     images = [Image("FROM ubuntu:latest"), Image("FROM alpine:latest")]
