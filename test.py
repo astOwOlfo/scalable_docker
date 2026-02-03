@@ -1,3 +1,4 @@
+import json
 import asyncio
 
 from scalable_docker.client import (
@@ -21,7 +22,12 @@ async def main() -> None:
     # await create_kubernetes_cluster_with_civo(n_nodes=4)
     # await create_in_clustetr_docker_registry()
     await delete_all_scalable_docker_kubernetes_deployments()
-    images = [Image("FROM ubuntu:latest"), Image("FROM ubuntu:latest")]
+
+    images = [
+        Image(json.loads(line)["dockerfile_content"])
+        for line in open("final-hard.jsonl")
+        if line.strip() and not line.startswith("#")
+    ]
     client = ScalableDockerClient()
     await client.build_images(images)
     containers: list[Container] = await client.start_containers(
@@ -30,9 +36,7 @@ async def main() -> None:
     for container in containers:
         print(
             "OUTPUT:",
-            await client.run_commands(
-                container, ["ls; whoami; pwd"], MultiCommandTimeout(8, 8)
-            ),
+            await client.run_commands(container, ["pwd"], MultiCommandTimeout(8, 8)),
         )
     await client.start_destroying_containers()
 
