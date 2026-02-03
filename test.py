@@ -18,7 +18,7 @@ async def main() -> None:
     # await create_in_clustetr_docker_registry()
     images = [Image("FROM ubuntu:latest"), Image("FROM alpine:latest")]
     client = ScalableDockerClient()
-    # await client.build_images(images)
+    await client.build_images(images)
     containers: list[Container] = await client.start_containers(
         [image.dockerfile_content for image in images]
     )

@@ -163,7 +163,7 @@ async def create_in_clustetr_docker_registry() -> None:
 
 def image_name(dockerfile_content: str) -> str:
     hash: str = sha256(dockerfile_content.encode()).hexdigest()
-    return f"image-{hash}"
+    return f"image-{hash[:32]}"
 
 
 @beartype
