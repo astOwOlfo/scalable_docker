@@ -116,7 +116,8 @@ async def create_kubernetes_cluster(
     await run_command(
         "civo",
         "kubernetes",
-        "create my-k8s-cluster",
+        "create",
+        "my-k8s-cluster",
         "--nodes",
         str(n_nodes),
         "--size",
