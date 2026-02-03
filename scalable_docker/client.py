@@ -111,19 +111,29 @@ async def install_civo() -> None:
 
 @beartype
 async def create_kubernetes_cluster_with_civo(
-    n_nodes: int, instance_type: str = "g4s.kube.large"
+    n_nodes: int,
+    instance_type: str = "g4s.kube.large",
+    cluster_name: str = "my-k8s-cluster",
 ) -> None:
     await run_command(
         "civo",
         "kubernetes",
         "create",
-        "my-k8s-cluster",
+        cluster_name,
         "--nodes",
         str(n_nodes),
         "--size",
         instance_type,
         "--wait",
     )
+    await run_command("civo", "kubernetes", "config", cluster_name, "--save")
+
+
+@beartype
+async def delete_kubernetes_cluster_with_civo(
+    cluster_name: str = "my-k8s-cluster",
+) -> None:
+    await run_command("civo", "kubernetes", "delete", cluster_name, "-y")
 
 
 @beartype
@@ -176,6 +186,24 @@ async def push_image(dockerfile_content) -> None:
     await run_command(
         "docker", "push", f"localhost:5000/{image_name(dockerfile_content)}:latest"
     )
+
+
+@beartype
+async def create_kubernetes_deployment(
+    deployment_name: str, dockerfile_content: str
+) -> None:
+    await run_command(
+        "kubectl",
+        "create",
+        "deployment",
+        deployment_name,
+        f"--image=registry:5000/{image_name(dockerfile_content):latest}",
+    )
+
+
+@beartype
+async def delete_kubernetes_deployment(deployment_name: str) -> None:
+    await run_command("kubectl", "delete", "deployment", deployment_name)
 
 
 @beartype
