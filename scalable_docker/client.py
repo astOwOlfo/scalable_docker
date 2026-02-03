@@ -306,11 +306,12 @@ class ScalableDockerClient:
 
         dockerfile_contents = set(image.dockerfile_content for image in images)
 
-        already_pushed: list[bool] = await asyncio.gather(
+        already_pushed: list[bool] = await asyncio_gather_max_parallels(
             *[
                 image_already_pushed(image_name(dockerfile_content))
                 for dockerfile_content in dockerfile_contents
-            ]
+            ],
+            max_parallels=256,
         )
 
         dockerfile_contents = [
