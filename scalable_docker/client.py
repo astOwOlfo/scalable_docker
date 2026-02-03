@@ -129,9 +129,7 @@ async def create_kubernetes_cluster_with_civo(
         instance_type,
         "--wait",
     )
-    await run_command(
-        "civo", "kubernetes", "config", cluster_name, "--save", "--save"
-    )
+    await run_command("civo", "kubernetes", "config", cluster_name, "--save", "--save")
 
 
 @beartype
@@ -312,7 +310,18 @@ class ScalableDockerClient:
             time_file = tf.name
 
         try:
-            output = await run_command("")
+            output = await run_command(
+                "/usr/bin/time",
+                "-f",
+                "%U %S",
+                "-o",
+                time_file,
+                "kubectl",
+                "exec",
+                f"deployment/{self.deployment_names[container.index]}",
+                "--",
+                **TODO,
+            )
         finally:
             os.unlink(time_file)
 
