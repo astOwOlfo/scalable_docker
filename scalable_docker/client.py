@@ -312,6 +312,7 @@ class ScalableDockerClient:
                 for dockerfile_content in dockerfile_contents
             ],
             max_parallels=256,
+            progress_bar_description="checking which docker images already exist on ghcr.io",
         )
 
         dockerfile_contents = [
