@@ -80,7 +80,9 @@ async def install_kubectl() -> None:
         """curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
 sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl""",
     )
-    print("INSTALLED DOCKER. PLEASE RESTART THE TERMINAL. EXITING")
+    print(
+        "INSTALLED DOCKER. PLEASE RESTART THE TERMINAL. IF USING TMUX, RUN `tmux kill-server`. EXITING"
+    )
     exit()
 
 
