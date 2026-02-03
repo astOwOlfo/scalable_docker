@@ -222,9 +222,9 @@ async def create_kubernetes_deployment(
         deployment_name,
         f"--image=ghcr.io/astowolfo/{image_name(dockerfile_content)}:latest",
         "--",
-        "tail",
-        "-f",
-        "/dev/null",
+        "/bin/bash",
+        "-c",
+        "tail -f /dev/null",
     )
 
     await run_command(
