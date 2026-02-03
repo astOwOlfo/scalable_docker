@@ -327,7 +327,9 @@ class ScalableDockerClient:
                 build_and_push_image(dockerfile_content)
                 for dockerfile_content in dockerfile_contents
             ],
-            max_parallels=batch_size,
+            max_parallels=batch_size
+            if batch_size is not None
+            else len(dockerfile_contents),
             progress_bar_description="building images",
         )
 
