@@ -71,6 +71,16 @@ async def run_command(*command: str, assert_success: bool = True) -> ProcessOutp
 
 
 @beartype
+async def install_kubectl() -> None:
+    await run_command(
+        "bash",
+        "-c",
+        """curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl""",
+    )
+
+
+@beartype
 async def install_civo() -> None:
     already_installed: bool = (
         await run_command("civo", "--version", assert_success=False)
