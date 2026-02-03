@@ -1,5 +1,5 @@
 from hashlib import sha256
-import json
+from uuid import uuid4
 import base64
 import subprocess
 from tqdm import tqdm
@@ -7,7 +7,7 @@ from os import makedirs
 import os
 from shlex import quote
 import asyncio
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from beartype import beartype
 
@@ -209,8 +209,16 @@ async def delete_kubernetes_deployment(deployment_name: str) -> None:
 
 
 @beartype
-@dataclass(frozen=True, slots=True)
+def random_deployment_name() -> str:
+    return f"deployment-{uuid4()}"
+
+
+@beartype
+@dataclass(slots=True)
 class ScalableDockerClient:
+    containers: list[Container] = field(init=False)
+    deployment_names: list[str] = field(init=False)
+
     async def docker_prune_everything(self) -> Any:
         raise NotImplementedError()
 
@@ -227,9 +235,27 @@ class ScalableDockerClient:
             await build_image(dockerfile_content)
             await push_image(dockerfile_content)
 
-    async def start_containers(
-        self, dockerfile_contents: list[str]
-    ) -> list[Container]: ...
+    async def start_containers(self, dockerfile_contents: list[str]) -> list[Container]:
+        self.deployment_names = [random_deployment_name() for _ in dockerfile_contents]
+
+        await asyncio.gather(
+            *[
+                create_kubernetes_deployment(
+                    deployment_name=deployment_name,
+                    dockerfile_content=dockerfile_content,
+                )
+                for deployment_name, dockerfile_content in zip(
+                    self.deployment_names, dockerfile_contents, strict=True
+                )
+            ]
+        )
+
+        self.containers = [
+            Container(dockerfile_content=dockerfile_content, index=i, worker_index=-1)
+            for i, dockerfile_content in enumerate(dockerfile_contents)
+        ]
+
+        return self.containers
 
     async def start_destroying_containers(self) -> None: ...
 
