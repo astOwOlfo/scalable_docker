@@ -320,6 +320,8 @@ class ScalableDockerClient:
         async with self.lock:
             self.stage = "running"
 
+        await asyncio.sleep(10.0)
+
         return self.containers
 
     async def start_destroying_containers(self) -> None:
