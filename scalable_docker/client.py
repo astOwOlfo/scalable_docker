@@ -206,7 +206,7 @@ async def image_already_pushed(dockerfile_content: str) -> bool:
         "docker",
         "manifest",
         "inspect",
-        image_name(dockerfile_content),
+        f"ghcr.io/astowolfo/{image_name(dockerfile_content)}",
         assert_success=False,
     )
     return output.exit_code == 0
