@@ -206,6 +206,7 @@ async def push_image(dockerfile_content: str) -> None:
         "--method",
         "PATCH",
         f"/user/packages/container/{image_name(dockerfile_content)}/visibility",
+        "-f",
         "visibility=public",
     )
 
