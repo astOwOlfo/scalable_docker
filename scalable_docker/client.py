@@ -199,7 +199,7 @@ async def create_kubernetes_deployment(
         "create",
         "deployment",
         deployment_name,
-        f"--image=registry:5000/{image_name(dockerfile_content):latest}",
+        f"--image=registry:5000/{image_name(dockerfile_content)}:latest",
     )
 
 
