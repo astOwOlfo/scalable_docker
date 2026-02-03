@@ -17,7 +17,7 @@ from scalable_docker.client import (
 async def main() -> None:
     # await install_docker()
     # await install_kubectl()
-    await delete_kubernetes_cluster_with_civo()
+    # await delete_kubernetes_cluster_with_civo()
     await create_kubernetes_cluster_with_civo(n_nodes=4)
     # await create_in_clustetr_docker_registry()
     await delete_all_scalable_docker_kubernetes_deployments()
