@@ -10,7 +10,7 @@ import os
 from shlex import quote
 import asyncio
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 from beartype import beartype
 
 
@@ -195,7 +195,7 @@ async def build_image(dockerfile_content: str) -> None:
 
 @beartype
 async def push_image(dockerfile_content) -> None:
-    await run_command("docker", "push", f"{image_name(dockerfile_content)}:latest")
+    await run_command("docker", "push", f"ghcr.io/astowolfo/{image_name(dockerfile_content)}:latest")
 
 
 @beartype
@@ -261,6 +261,8 @@ class ScalableDockerClient:
     deployment_names: list[str] = field(init=False)
     deployment_is_ready: list[bool] = field(init=False)
     lock: asyncio.Lock = asyncio.Lock()
+    stage: Literal["stopped", "starting", "running", "stopping"] = "stopped"
+    stop_task: asyncio.Task = field(init=False)
 
     async def docker_prune_everything(self) -> Any:
         raise NotImplementedError()
@@ -279,6 +281,20 @@ class ScalableDockerClient:
             await push_image(dockerfile_content)
 
     async def start_containers(self, dockerfile_contents: list[str]) -> list[Container]:
+        if self.stage == "running":
+            await self.start_destroying_containers()
+
+        if self.stage == "stopping":
+            await self.stop_task
+            async with self.lock:
+                self.stage = "stopped"
+
+        async with self.lock:
+            assert self.stage == "stopped", (
+                "you cannot call start_containers twice in parallel"
+            )
+            self.stage = "starting"
+
         self.deployment_names = [random_deployment_name() for _ in dockerfile_contents]
 
         await asyncio.gather(
@@ -299,13 +315,26 @@ class ScalableDockerClient:
         ]
         self.deployment_is_ready = [False] * len(dockerfile_contents)
 
+        async with self.lock:
+            self.stage = "running"
+
         return self.containers
 
-    async def start_destroying_containers(self) -> None: ...
+    async def start_destroying_containers(self) -> None:
+        assert self.stage in ["starting", "running"], (
+            "you must call start_containers before calling start_destroying_containers"
+        )
+        async with self.lock:
+            self.stage = "stopping"
+            self.stop_task = asynco.Task()
 
     async def run_single_command(
         self, command: str, container: Container, timeout_seconds: float
     ) -> ProcessOutput:
+        assert self.stage == "running", (
+            "you must call start_containers before calling run_single_command"
+        )
+
         longer_timeout = 2 * timeout_seconds + 8
         return await run_command(
             "timeout",
@@ -328,6 +357,10 @@ class ScalableDockerClient:
         timeout: MultiCommandTimeout,
         blocking: bool = False,
     ) -> list[ProcessOutput]:
+        assert self.stage == "running", (
+            "you must call start_containers before calling run_single_command"
+        )
+
         if blocking:
             raise NotImplementedError("blocking=True is not supported")
 
