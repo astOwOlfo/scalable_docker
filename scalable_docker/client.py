@@ -245,8 +245,8 @@ async def wait_for_deployment_ready(
     await run_command(
         "kubectl",
         "wait",
-        "--for=condition=Ready",
-        f"pod/{deployment_name}",
+        "--for=condition=Available",
+        f"deployment/{deployment_name}",
         f"--timeout={timeout_seconds}s",
     )
 
