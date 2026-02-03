@@ -223,9 +223,9 @@ async def create_kubernetes_deployment(
         deployment_name,
         f"--image=ghcr.io/astowolfo/{image_name(dockerfile_content)}:latest",
         "--",
-        "/bin/bash",
-        "-c",
-        "sleep infinity",
+        "tail",
+        "-f",
+        "/dev/null",
     )
 
     await run_command(
@@ -412,6 +412,7 @@ class ScalableDockerClient:
             "/bin/bash",
             "-c",
             command,
+            assert_success=True,
         )
 
     async def run_commands(
