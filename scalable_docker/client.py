@@ -1,6 +1,6 @@
 from hashlib import sha256
 from uuid import uuid4
-from tempfile import NamedTemporaryFile
+from time import perf_counter
 import json
 import base64
 import subprocess
@@ -51,7 +51,7 @@ class MultiCommandTimeout:
     total_seconds: int | float
 
 
-TIMED_OUT_PROCESS_OUTPUT = ProcessOutput(exit_code=1, stdout="", stderr="timed out")
+TIMED_OUT_PROCESS_OUTPUT = ProcessOutput(exit_code=124, stdout="", stderr="timed out")
 
 
 @beartype
@@ -304,26 +304,22 @@ class ScalableDockerClient:
     async def start_destroying_containers(self) -> None: ...
 
     async def run_single_command(
-        self, container: Container, timeout_seconds: int
-    ) -> tuple[ProcessOutput, float]:
-        with NamedTemporaryFile(delete=False) as tf:
-            time_file = tf.name
-
-        try:
-            output = await run_command(
-                "/usr/bin/time",
-                "-f",
-                "%U %S",
-                "-o",
-                time_file,
-                "kubectl",
-                "exec",
-                f"deployment/{self.deployment_names[container.index]}",
-                "--",
-                **TODO,
-            )
-        finally:
-            os.unlink(time_file)
+        self, command: str, container: Container, timeout_seconds: float
+    ) -> ProcessOutput:
+        longer_timeout = 2 * timeout_seconds + 8
+        return await run_command(
+            "timeout",
+            str(longer_timeout),
+            "kubectl",
+            "exec",
+            f"deployment/{self.deployment_names[container.index]}",
+            "--",
+            "timeout",
+            str(timeout_seconds),
+            "/bin/bash",
+            "-c",
+            command,
+        )
 
     async def run_commands(
         self,
@@ -343,7 +339,23 @@ class ScalableDockerClient:
         async with self.lock:
             self.deployment_is_ready[container.index] = True
 
-        return [await self.run_single_command()]
+        outputs: list[ProcessOutput] = []
+        start_time = perf_counter()
+        for command in commands:
+            time_spent = perf_counter() - start_time
+            remaining_time = timeout.total_seconds - time_spent
+            if remaining_time <= 0:
+                outputs.append(TIMED_OUT_PROCESS_OUTPUT)
+                continue
+            outputs.append(
+                await self.run_single_command(
+                    command=command,
+                    container=container,
+                    timeout_seconds=min(remaining_time, timeout.seconds_per_command),
+                )
+            )
+
+        return outputs
 
 
 @beartype
