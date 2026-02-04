@@ -3,7 +3,6 @@ import asyncio
 
 from scalable_docker.client import (
     MultiCommandTimeout,
-    create_in_clustetr_docker_registry,
     ScalableDockerClient,
     Image,
     create_kubernetes_cluster_with_civo,

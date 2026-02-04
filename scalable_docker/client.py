@@ -3,6 +3,7 @@ from hashlib import sha256
 from uuid import uuid4
 from time import perf_counter
 import json
+from sys import stderr
 import base64
 import subprocess
 from tqdm.asyncio import tqdm as tqdm_asyncio
@@ -73,10 +74,6 @@ async def install_kubectl() -> None:
         """curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
 sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl""",
     )
-    print(
-        "INSTALLED DOCKER. PLEASE RESTART THE TERMINAL. IF USING TMUX, RUN `tmux kill-server`. EXITING"
-    )
-    exit()
 
 
 async def install_docker() -> None:
@@ -85,6 +82,10 @@ async def install_docker() -> None:
         "-c",
         'sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add - && sudo add-apt-repository -y "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" && sudo DEBIAN_FRONTEND=noninteractive apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce && sudo usermod -aG docker $USER && sudo usermod -aG docker $USER',
     )
+    print(
+        "INSTALLED DOCKER. PLEASE RESTART THE TERMINAL. IF USING TMUX, RUN `tmux kill-server`. EXITING"
+    )
+    exit()
 
 
 async def install_civo() -> None:
@@ -143,7 +144,7 @@ async def delete_kubernetes_cluster_with_civo(
     await run_command("civo", "kubernetes", "delete", cluster_name, "-y")
 
 
-async def create_in_clustetr_docker_registry() -> None:
+async def create_in_cluster_docker_registry() -> None:
     await run_command(
         "kubectl",
         "create",
@@ -289,6 +290,7 @@ def random_deployment_name() -> str:
 class ScalableDockerClient:
     key: str
     max_parallel_commands: int | None = None
+    max_command_length: int = 65536
     exec_semaphore: asyncio.Semaphore | None = field(init=False)
     containers: list[Container] = field(init=False)
     deployment_names: list[str] = field(init=False)
@@ -413,6 +415,13 @@ class ScalableDockerClient:
         assert self.stage == "running", (
             "you must call start_containers before calling run_single_command"
         )
+
+        if len(command) > self.max_command_length:
+            print(
+                f"Scalable Docker Warning: Truncating long command of length {len(command)} to length {self.max_command_length}.",
+                file=stderr,
+            )
+            command = command[:command]
 
         longer_timeout = 2 * timeout_seconds + 8
         return await run_command(
