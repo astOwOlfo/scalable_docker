@@ -447,7 +447,7 @@ class ScalableDockerClient:
         blocking: bool = False,
     ) -> list[ProcessOutput]:
         assert self.stage == "running", (
-            "you must call start_containers before calling run_single_command"
+            "you must call start_containers before calling run_commands"
         )
 
         if blocking:
