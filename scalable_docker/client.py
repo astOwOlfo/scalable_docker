@@ -239,7 +239,16 @@ async def create_kubernetes_deployment(
 
 
 async def delete_kubernetes_deployment(deployment_name: str) -> None:
-    await run_command("kubectl", "delete", "deployment", deployment_name, "--wait")
+    await run_command(
+        "kubectl",
+        "delete",
+        "deployment",
+        deployment_name,
+        "--wait",
+        "--timeout",
+        "300s",
+        assert_success=False,
+    )
 
     await run_command(
         "kubectl",
