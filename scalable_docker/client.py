@@ -1,4 +1,3 @@
-from contextlib import nullcontext
 from hashlib import sha256
 from uuid import uuid4
 from time import perf_counter
@@ -15,7 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
-# subprocess.run(["ulimit", "-n", "65536"], check=True)
+subprocess.run("ulimit -n 65536", check=True, shell=True)
 
 
 @dataclass(frozen=True, slots=True)
