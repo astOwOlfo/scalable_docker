@@ -466,7 +466,7 @@ class ScalableDockerClient:
                 f"Scalable Docker Warning: Truncating long command of length {len(command)} to length {self.max_command_length}.",
                 file=stderr,
             )
-            command = command[:command]
+            command = command[:self.max_command_length]
 
         longer_timeout = 2 * timeout_seconds + 8
         return await run_command(
