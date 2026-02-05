@@ -29,11 +29,14 @@ class Image:
     max_memory_gigabytes: float | int = 1.0
 
 
+ContainerId = int
+
+
 @dataclass(frozen=True, slots=True)
 class Container:
+    id: ContainerId
+    deployment_name: str
     dockerfile_content: str
-    index: int
-    worker_index: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,7 +105,7 @@ async def install_civo() -> None:
         "INSTALL COMMAND OUTPUT:",
         install_command_output.stdout + install_command_output.stderr,
     )
-    # TODO: finish installing
+    await run_command("sudo", "mv", "/tmp/civo /usr/local/bin/civo")
 
 
 async def create_kubernetes_secret(github_token: str) -> None:
@@ -301,12 +304,21 @@ class ScalableDockerClient:
     max_parallel_commands: int | None = None
     max_command_length: int = 65536
     exec_semaphore: asyncio.Semaphore | None = field(init=False)
-    containers: list[Container] = field(init=False)
-    deployment_names: list[str] = field(init=False)
-    deployment_is_ready: list[bool] = field(init=False)
+    containers: dict[ContainerId, Container] = field(default_factory=lambda: {})
+    stopped_container_ids: set[int] = field(default_factory=lambda: set())
+    wait_for_deployment_ready_tasks: dict[ContainerId, asyncio.Task] = field(
+        default_factory=lambda: {}
+    )
+    stop_tasks: dict[ContainerId, asyncio.Task] = field(default_factory=lambda: {})
     lock: asyncio.Lock = field(default_factory=lambda: asyncio.Lock())
-    stage: Literal["stopped", "starting", "running", "stopping"] = "stopped"
-    stop_task: asyncio.Task = field(init=False)
+    create_containers_lock: asyncio.Lock = field(default_factory=lambda: asyncio.Lock())
+    container_id_counter: int = 0
+
+    async def new_container_id(self) -> ContainerId:
+        async with self.lock:
+            id = self.container_id_counter
+            self.container_id_counter += 1
+            return id
 
     def __post_init__(self) -> None:
         self.exec_semaphore = (
@@ -365,71 +377,79 @@ class ScalableDockerClient:
             progress_bar_description="building images",
         )
 
-    async def start_containers(self, dockerfile_contents: list[str]) -> list[Container]:
-        if self.stage == "running":
-            await self.start_destroying_containers()
-
-        if self.stage == "stopping":
-            await self.stop_task
+    async def wait_until_all_containers_stopped(self) -> None:
+        for container_id, stop_task in self.stop_tasks.items():
+            await stop_task
             async with self.lock:
-                self.stage = "stopped"
+                self.stopped_container_ids.add(container_id)
 
-        async with self.lock:
-            assert self.stage == "stopped", (
-                "you cannot call start_containers twice in parallel"
+    async def start_containers(self, dockerfile_contents: list[str]) -> list[Container]:
+        async with self.create_containers_lock:
+            await self.start_destroying_containers()
+            await self.wait_until_all_containers_stopped()
+            assert set(self.stopped_container_ids) == set(self.containers.keys())
+
+            container_ids = [await self.new_container_id() for _ in dockerfile_contents]
+            async with self.lock:
+                self.containers = {
+                    id: Container(
+                        id=id,
+                        deployment_name=random_deployment_name(),
+                        dockerfile_content=dockerfile_content,
+                    )
+                    for id, dockerfile_content in zip(
+                        container_ids, dockerfile_contents, strict=True
+                    )
+                }
+
+                self.stopped_container_ids = set()
+                self.stop_tasks = {}
+
+            await asyncio.gather(
+                *[
+                    create_kubernetes_deployment(
+                        deployment_name=container.deployment_name,
+                        dockerfile_content=container.dockerfile_content,
+                    )
+                    for container in self.containers.values()
+                ]
             )
-            self.stage = "starting"
 
-        # !!! TEMPORARY !!!
-        await delete_all_scalable_docker_kubernetes_deployments()
-
-        self.deployment_names = [random_deployment_name() for _ in dockerfile_contents]
-
-        await asyncio.gather(
-            *[
-                create_kubernetes_deployment(
-                    deployment_name=deployment_name,
-                    dockerfile_content=dockerfile_content,
+            self.wait_for_deployment_ready_tasks = {
+                id: asyncio.create_task(
+                    wait_for_deployment_ready(container.deployment_name)
                 )
-                for deployment_name, dockerfile_content in zip(
-                    self.deployment_names, dockerfile_contents, strict=True
-                )
-            ]
-        )
+                for id, container in self.containers.items()
+            }
 
-        self.containers = [
-            Container(dockerfile_content=dockerfile_content, index=i, worker_index=-1)
-            for i, dockerfile_content in enumerate(dockerfile_contents)
-        ]
-        self.deployment_is_ready = [False] * len(dockerfile_contents)
+            return [self.containers[id] for id in container_ids]
 
+    async def start_destroying_container(self, container: Container) -> None:
         async with self.lock:
-            self.stage = "running"
+            assert container.id in self.containers.keys(), (
+                "container has already been destroyed"
+            )
 
-        await asyncio.sleep(10.0)
+            already_stopping = container.id in self.stop_tasks.keys()
+            if already_stopping:
+                return
 
-        return self.containers
+            self.stop_tasks[container.id] = asyncio.create_task(
+                delete_kubernetes_deployment(container.deployment_name)
+            )
 
     async def start_destroying_containers(self) -> None:
-        assert self.stage in ["starting", "running"], (
-            "you must call start_containers before calling start_destroying_containers"
-        )
-
-        async def workload() -> None:
-            await asyncio.gather(
-                *[delete_kubernetes_deployment(name) for name in self.deployment_names]
-            )
-
-        async with self.lock:
-            self.stage = "stopping"
-            self.stop_task = asyncio.create_task(workload())
+        for container in self.containers.values():
+            await self.start_destroying_container(container)
 
     async def run_single_command(
         self, command: str, container: Container, timeout_seconds: float
     ) -> ProcessOutput:
-        assert self.stage == "running", (
-            "you must call start_containers before calling run_single_command"
+        assert container.id in self.containers.keys(), (
+            "container has already been destroyed"
         )
+
+        await self.wait_for_deployment_ready_tasks[container.id]
 
         if len(command) > self.max_command_length:
             print(
@@ -444,7 +464,7 @@ class ScalableDockerClient:
             str(longer_timeout),
             "kubectl",
             "exec",
-            f"deployment/{self.deployment_names[container.index]}",
+            f"deployment/{container.deployment_name}",
             "--",
             "timeout",
             str(timeout_seconds),
@@ -461,20 +481,8 @@ class ScalableDockerClient:
         timeout: MultiCommandTimeout,
         blocking: bool = False,
     ) -> list[ProcessOutput]:
-        assert self.stage == "running", (
-            "you must call start_containers before calling run_commands"
-        )
-
         if blocking:
             raise NotImplementedError("blocking=True is not supported")
-
-        deployment_name: str = self.deployment_names[container.index]
-
-        if not self.deployment_is_ready[container.index]:
-            await wait_for_deployment_ready(deployment_name)
-
-        async with self.lock:
-            self.deployment_is_ready[container.index] = True
 
         async with (
             self.exec_semaphore if self.exec_semaphore is not None else nullcontext()
