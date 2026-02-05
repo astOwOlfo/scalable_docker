@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
-subprocess.run("ulimit -n 65536", check=True, shell=True)
+# subprocess.run("ulimit -n 65536", check=True, shell=True)
 
 
 @dataclass(frozen=True, slots=True)
