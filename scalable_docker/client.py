@@ -107,7 +107,7 @@ async def install_civo() -> None:
         "INSTALL COMMAND OUTPUT:",
         install_command_output.stdout + install_command_output.stderr,
     )
-    await run_command("sudo", "mv", "/tmp/civo /usr/local/bin/civo")
+    await run_command("sudo", "mv", "/tmp/civo", "/usr/local/bin/civo")
 
 
 async def create_kubernetes_secret(github_token: str) -> None:
@@ -466,7 +466,7 @@ class ScalableDockerClient:
                 f"Scalable Docker Warning: Truncating long command of length {len(command)} to length {self.max_command_length}.",
                 file=stderr,
             )
-            command = command[:self.max_command_length]
+            command = command[: self.max_command_length]
 
         longer_timeout = 2 * timeout_seconds + 8
         return await run_command(
