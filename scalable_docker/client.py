@@ -452,15 +452,9 @@ class ScalableDockerClient:
         for container in self.containers.values():
             await self.start_destroying_container(container)
 
-    async def run_single_command(
+    async def _run_single_command(
         self, command: str, container: Container, timeout_seconds: float
     ) -> ProcessOutput:
-        assert container.id in self.containers.keys(), (
-            "container has already been destroyed"
-        )
-
-        await self.wait_for_deployment_ready_tasks[container.id]
-
         if len(command) > self.max_command_length:
             print(
                 f"Scalable Docker Warning: Truncating long command of length {len(command)} to length {self.max_command_length}.",
@@ -494,6 +488,12 @@ class ScalableDockerClient:
         if blocking:
             raise NotImplementedError("blocking=True is not supported")
 
+        assert container.id in self.containers.keys(), (
+            "container has already been destroyed"
+        )
+
+        await self.wait_for_deployment_ready_tasks[container.id]
+
         assert exec_semaphore is not None
         async with exec_semaphore:
             outputs: list[ProcessOutput] = []
@@ -505,7 +505,7 @@ class ScalableDockerClient:
                     outputs.append(TIMED_OUT_PROCESS_OUTPUT)
                     continue
                 outputs.append(
-                    await self.run_single_command(
+                    await self._run_single_command(
                         command=command,
                         container=container,
                         timeout_seconds=min(
