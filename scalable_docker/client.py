@@ -56,11 +56,9 @@ TIMED_OUT_PROCESS_OUTPUT = ProcessOutput(exit_code=124, stdout="", stderr="timed
 
 
 async def run_command(*command: str, assert_success: bool = True) -> ProcessOutput:
-    print("Running:", command)
     process = await asyncio.create_subprocess_exec(
         *command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )
-    print("Ran:", command)
     stdout, stderr = await process.communicate()
     assert process.returncode is not None
     if assert_success and process.returncode != 0:
