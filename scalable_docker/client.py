@@ -326,7 +326,7 @@ class ScalableDockerClient:
             self.container_id_counter += 1
             return id
 
-    async def __post_init__(self) -> None:
+    def __post_init__(self) -> None:
         # !!! TEMPORARY !!!
         global exec_semaphore
         if exec_semaphore is None:
