@@ -12,7 +12,10 @@ import os
 from shlex import quote
 import asyncio
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any
+
+
+subprocess.run(["ulimit", "-n", "65536"], check=True)
 
 
 @dataclass(frozen=True, slots=True)
