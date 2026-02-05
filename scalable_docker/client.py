@@ -289,7 +289,7 @@ def random_deployment_name() -> str:
 @dataclass(slots=True)
 class ScalableDockerClient:
     key: str
-    max_parallel_commands: int | None
+    max_parallel_commands: int | None = None
     max_command_length: int = 65536
     exec_semaphore: asyncio.Semaphore | None = field(init=False)
     containers: list[Container] = field(init=False)
