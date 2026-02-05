@@ -371,6 +371,9 @@ class ScalableDockerClient:
             )
             self.stage = "starting"
 
+        # !!! TEMPORARY !!!
+        await delete_all_scalable_docker_kubernetes_deployments()
+
         self.deployment_names = [random_deployment_name() for _ in dockerfile_contents]
 
         await asyncio.gather(
