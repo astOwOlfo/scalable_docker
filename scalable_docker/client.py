@@ -113,6 +113,9 @@ class ScalableDockerClient(AsyncJsonRESTClient):
 
         return response
 
+    async def start_destroying_container(self, container: Container) -> None:
+        pass  # only for compatibility with the k8s branch
+
     async def start_containers(self, dockerfile_contents: list[str]) -> list[Container]:
         response = await self.call_server(
             function="start_containers",
