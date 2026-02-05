@@ -289,7 +289,7 @@ def random_deployment_name() -> str:
 @dataclass(slots=True)
 class ScalableDockerClient:
     key: str
-    max_parallel_commands: int | None = None
+    max_parallel_commands: int | None
     max_command_length: int = 65536
     exec_semaphore: asyncio.Semaphore | None = field(init=False)
     containers: list[Container] = field(init=False)
@@ -305,6 +305,9 @@ class ScalableDockerClient:
             if self.max_parallel_commands is not None
             else None
         )
+
+        # !!! TEMPORARY !!!
+        self.max_parallel_commands = 32 if self.key == "synthetic_env" else 8
 
     async def docker_prune_everything(self) -> Any:
         raise NotImplementedError()
