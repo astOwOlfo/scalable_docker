@@ -330,7 +330,7 @@ class ScalableDockerClient:
         # !!! TEMPORARY !!!
         global exec_semaphore
         if exec_semaphore is None:
-            exec_semaphore = asyncio.Semaphore(64)
+            exec_semaphore = asyncio.Semaphore(256)
 
     # !!! ONLY COMMENTED TEMPORARILY !!!
     # def __post_init__(self) -> None:
