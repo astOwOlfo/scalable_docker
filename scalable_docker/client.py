@@ -248,7 +248,7 @@ async def delete_kubernetes_deployment(deployment_name: str) -> None:
         "pod",
         "-l",
         f"app={deployment_name}",
-        "--timeout=120s",
+        "--timeout=3600s",
     )
 
 
