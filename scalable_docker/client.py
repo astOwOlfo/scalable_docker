@@ -94,12 +94,6 @@ async def install_docker() -> None:
 
 
 async def install_civo() -> None:
-    already_installed: bool = (
-        await run_command("civo", "--version", assert_success=False)
-    ).exit_code == 0
-    if already_installed:
-        return
-
     install_command_output = await run_command(
         "bash", "-c", "curl -sL https://civo.com/get | sh"
     )
