@@ -302,7 +302,7 @@ exec_semaphore: asyncio.Semaphore | None = None
 class ScalableDockerClient:
     key: str
     max_parallel_commands: int | None = None
-    max_command_length: int = 65536
+    max_command_length: int = 262144
     # exec_semaphore: asyncio.Semaphore | None = field(init=False)
     containers: dict[ContainerId, Container] = field(default_factory=lambda: {})
     stopped_container_ids: set[int] = field(default_factory=lambda: set())
