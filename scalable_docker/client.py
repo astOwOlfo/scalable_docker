@@ -102,7 +102,7 @@ async def install_civo(api_key: str) -> None:
         install_command_output.stdout + install_command_output.stderr,
     )
     await run_command("sudo", "mv", "/tmp/civo", "/usr/local/bin/civo")
-    await run_command("civo", "apikey", "add", "my-key", api_ey)
+    await run_command("civo", "apikey", "add", "my-key", api_key)
     await run_command("civo", "apikey", "current", "my-key")
 
 
