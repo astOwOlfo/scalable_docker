@@ -93,7 +93,7 @@ async def install_docker() -> None:
     exit()
 
 
-async def install_civo() -> None:
+async def install_civo(api_key: str) -> None:
     install_command_output = await run_command(
         "bash", "-c", "curl -sL https://civo.com/get | sh"
     )
@@ -102,6 +102,8 @@ async def install_civo() -> None:
         install_command_output.stdout + install_command_output.stderr,
     )
     await run_command("sudo", "mv", "/tmp/civo", "/usr/local/bin/civo")
+    await run_command("civo", "apikey", "add", "my-key", api_ey)
+    await run_command("civo", "apikey", "current", "my-key")
 
 
 async def create_kubernetes_secret(github_token: str) -> None:
