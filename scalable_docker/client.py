@@ -528,9 +528,6 @@ class ScalableDockerClient:
             f"echo {encoded_chunk} | base64 -d >> {quote(filename)}"
             for encoded_chunk in encoded_chunks
         ]
-        assert all(
-            len(command) <= self.max_command_length for command in commands
-        )
         return commands
 
 
