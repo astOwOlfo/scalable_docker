@@ -512,6 +512,27 @@ class ScalableDockerClient:
 
             return outputs
 
+        def upload_big_file_commands(self, filename: str, content: str) -> list[str]:
+            content_bytes: bytes = content.encode()
+            chunk_size: int = self.max_command_length // 2
+            chunks: list[bytes] = [
+                content_bytes[i : i + chunk_size]
+                for i in range(0, len(content_bytes), chunk_size)
+            ]
+            encoded_chunks: list[str] = [
+                base64.b64encode(chunk).decode() for chunk in chunks
+            ]
+            commands: list[str] = [
+                f"echo {encoded_chunks[0]} | base64 -d > {quote(filename)}"
+            ] + [
+                f"echo {encoded_chunk} | base64 -d >> {quote(filename)}"
+                for encoded_chunk in encoded_chunks
+            ]
+            assert all(
+                len(command) <= len(self.max_command_length) for command in commands
+            )
+            return commands
+
 
 def upload_file_command(filename: str, content: str) -> str:
     encoded_data = base64.b64encode(content.encode()).decode()
