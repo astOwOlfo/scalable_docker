@@ -526,7 +526,7 @@ class ScalableDockerClient:
             f"echo {encoded_chunks[0]} | base64 -d > {quote(filename)}"
         ] + [
             f"echo {encoded_chunk} | base64 -d >> {quote(filename)}"
-            for encoded_chunk in encoded_chunks
+            for encoded_chunk in encoded_chunks[1:]
         ]
         return commands
 
