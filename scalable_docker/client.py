@@ -17,6 +17,49 @@ from typing import Any
 # subprocess.run("ulimit -n 65536", check=True, shell=True)
 
 
+def _require_env(name: str, description: str) -> str:
+    value = os.environ.get(name)
+    if not value:
+        raise RuntimeError(
+            f"Environment variable {name!r} is not set. "
+            f"Please set it to {description}."
+        )
+    return value
+
+
+def _container_registry() -> str:
+    return os.environ.get("CONTAINER_REGISTRY", "ghcr.io")
+
+
+def _container_registry_username() -> str:
+    return _require_env(
+        "CONTAINER_REGISTRY_USERNAME",
+        f"your username on the container registry {_container_registry()!r} "
+        "(the registry is set via the CONTAINER_REGISTRY environment "
+        "variable, which defaults to 'ghcr.io' when unset; e.g. your GitHub "
+        "username when using 'ghcr.io', or your Docker Hub username when "
+        "using 'docker.io'). This is the namespace under which images will "
+        "be pushed (i.e. images will be tagged as "
+        "'<CONTAINER_REGISTRY>/<CONTAINER_REGISTRY_USERNAME>/<image>').",
+    )
+
+
+def _container_registry_email() -> str:
+    return _require_env(
+        "CONTAINER_REGISTRY_EMAIL",
+        f"the email address associated with your account on the container "
+        f"registry {_container_registry()!r} (the registry is set via the "
+        "CONTAINER_REGISTRY environment variable, which defaults to 'ghcr.io' "
+        "when unset; the account is the one identified by "
+        "CONTAINER_REGISTRY_USERNAME). Used when creating the Kubernetes "
+        "docker-registry pull secret.",
+    )
+
+
+def _image_repo_prefix() -> str:
+    return f"{_container_registry()}/{_container_registry_username()}"
+
+
 @dataclass(frozen=True, slots=True)
 class ProcessOutput:
     exit_code: int
@@ -113,10 +156,10 @@ async def create_kubernetes_secret(github_token: str) -> None:
         "secret",
         "docker-registry",
         "ghcr-secret",
-        "--docker-server=ghcr.io",
-        "--docker-username=astowolfo",
+        f"--docker-server={_container_registry()}",
+        f"--docker-username={_container_registry_username()}",
         f"--docker-password={github_token}",
-        "--docker-email=volodimir1024@gmail.com",
+        f"--docker-email={_container_registry_email()}",
     )
 
 
@@ -192,14 +235,16 @@ async def build_image(dockerfile_content: str) -> None:
         "docker",
         "build",
         "-t",
-        f"ghcr.io/astowolfo/{image_name(dockerfile_content)}:latest",
+        f"{_image_repo_prefix()}/{image_name(dockerfile_content)}:latest",
         dir,
     )
 
 
 async def push_image(dockerfile_content: str) -> None:
     await run_command(
-        "docker", "push", f"ghcr.io/astowolfo/{image_name(dockerfile_content)}:latest"
+        "docker",
+        "push",
+        f"{_image_repo_prefix()}/{image_name(dockerfile_content)}:latest",
     )
 
 
@@ -208,7 +253,7 @@ async def image_already_pushed(dockerfile_content: str) -> bool:
         "docker",
         "manifest",
         "inspect",
-        f"ghcr.io/astowolfo/{image_name(dockerfile_content)}",
+        f"{_image_repo_prefix()}/{image_name(dockerfile_content)}",
         assert_success=False,
     )
     return output.exit_code == 0
@@ -222,7 +267,7 @@ async def create_kubernetes_deployment(
         "create",
         "deployment",
         deployment_name,
-        f"--image=ghcr.io/astowolfo/{image_name(dockerfile_content)}:latest",
+        f"--image={_image_repo_prefix()}/{image_name(dockerfile_content)}:latest",
         "--",
         "/bin/bash",
         "-c",
@@ -339,7 +384,7 @@ class ScalableDockerClient:
                 for dockerfile_content in dockerfile_contents
             ],
             max_parallels=256,
-            progress_bar_description="checking which images already exist on ghcr.io",
+            progress_bar_description=f"checking which images already exist on {_container_registry()}",
         )
 
         dockerfile_contents = [
