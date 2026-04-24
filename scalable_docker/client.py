@@ -33,7 +33,7 @@ def _container_registry() -> str:
 
 
 def _container_registry_username() -> str:
-    return _require_env(
+    username = _require_env(
         "CONTAINER_REGISTRY_USERNAME",
         f"your username on the container registry {_container_registry()!r} "
         "(the registry is set via the CONTAINER_REGISTRY environment "
@@ -43,6 +43,9 @@ def _container_registry_username() -> str:
         "be pushed (i.e. images will be tagged as "
         "'<CONTAINER_REGISTRY>/<CONTAINER_REGISTRY_USERNAME>/<image>').",
     )
+    if not username.islower():
+        raise RuntimeError("CONTAINER_REGISTRY_USERNAME must be lowercase")
+    return username
 
 
 def _container_registry_email() -> str:
