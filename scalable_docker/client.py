@@ -296,16 +296,13 @@ def random_deployment_name() -> str:
     return f"deployment-{uuid4()}"
 
 
-# !!! ONLY GLOBAL TEMPORARILY !!!
-exec_semaphore: asyncio.Semaphore | None = None
+exec_semaphore: asyncio.Semaphore = asyncio.Semaphore(64)
 
 
 @dataclass(slots=True)
 class ScalableDockerClient:
     key: str
-    max_parallel_commands: int | None = None
     max_command_length: int = 65536
-    # exec_semaphore: asyncio.Semaphore | None = field(init=False)
     containers: dict[ContainerId, Container] = field(default_factory=lambda: {})
     stopped_container_ids: set[int] = field(default_factory=lambda: set())
     wait_for_deployment_ready_tasks: dict[ContainerId, asyncio.Task] = field(
@@ -321,20 +318,6 @@ class ScalableDockerClient:
             id = self.container_id_counter
             self.container_id_counter += 1
             return id
-
-    def __post_init__(self) -> None:
-        # !!! TEMPORARY !!!
-        global exec_semaphore
-        if exec_semaphore is None:
-            exec_semaphore = asyncio.Semaphore(64)
-
-    # !!! ONLY COMMENTED TEMPORARILY !!!
-    # def __post_init__(self) -> None:
-    #     self.exec_semaphore = (
-    #         asyncio.Semaphore(self.max_parallel_commands)
-    #         if self.max_parallel_commands is not None
-    #         else None
-    #     )
 
     async def docker_prune_everything(self) -> Any:
         raise NotImplementedError()
