@@ -4,6 +4,7 @@ from time import perf_counter
 import json
 from sys import stderr
 import base64
+import shutil
 import subprocess
 from tqdm.asyncio import tqdm as tqdm_asyncio
 from os import makedirs
@@ -116,6 +117,9 @@ async def run_command(*command: str, assert_success: bool = True) -> ProcessOutp
 
 
 async def install_kubectl() -> None:
+    if shutil.which("kubectl") is not None:
+        print("kubectl is already installed")
+        return
     await run_command(
         "bash",
         "-c",
@@ -125,6 +129,9 @@ sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl""",
 
 
 async def install_docker() -> None:
+    if shutil.which("docker") is not None:
+        print("docker is already installed")
+        return
     await run_command(
         "bash",
         "-c",
@@ -137,6 +144,9 @@ async def install_docker() -> None:
 
 
 async def install_civo(api_key: str) -> None:
+    if shutil.which("civo") is not None:
+        print("civo is already installed")
+        return
     install_command_output = await run_command(
         "bash", "-c", "curl -sL https://civo.com/get | sh"
     )
