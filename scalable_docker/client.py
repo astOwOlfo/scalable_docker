@@ -176,6 +176,22 @@ async def create_kubernetes_secret(github_token: str) -> None:
     )
 
 
+async def docker_login(github_token: str) -> None:
+    process = await asyncio.create_subprocess_exec(
+        "docker", "login", _container_registry(),
+        "-u", _container_registry_username(),
+        "--password-stdin",
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await process.communicate(input=github_token.encode())
+    if process.returncode != 0:
+        raise RuntimeError(
+            f"docker login failed.\nSTDOUT: {stdout.decode(errors='replace')}\nSTDERR: {stderr.decode(errors='replace')}"
+        )
+
+
 async def create_kubernetes_cluster_with_civo(
     n_nodes: int,
     instance_type: str = "g4s.kube.large",
